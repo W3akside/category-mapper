@@ -1843,22 +1843,27 @@ CATEGORY_DATA = {
 
 # --- 앱 화면 꾸미기 ---
 st.set_page_config(page_title="카테고리 매퍼", layout="centered")
-st.title("🔍 우리회사 카테고리 검색기")
+st.title("🔍 KeP 카테고리 검색기")
 st.info("품명이나 규격을 입력하면 가장 유사한 카테고리를 찾아줍니다.")
 
 query = st.text_input("검색어를 입력하세요 (예: 실납, 고무, 택배)")
 
 if query:
     choices = list(CATEGORY_DATA.values())
-    # 유사도 검사 (상위 5개 추출)
-    results = process.extract(query, choices, limit=5)
+    
+    # [수정포인트 1] scorer를 추가해서 "진짜 그 단어"가 포함된 것 위주로 찾게 바꿨습니다.
+    results = process.extract(query, choices, limit=5, scorer=process.token_set_ratio)
     
     st.write("---")
     for match_text, score in results:
+        # [수정포인트 2] 너무 점수가 낮은(안 닮은) 결과는 아예 안 보여주고 넘어갑니다.
+        if score < 50:
+            continue
+            
         # 텍스트로 코드 역추적
         item_code = [k for k, v in CATEGORY_DATA.items() if v == match_text][0]
         
-        # 결과 출력
+        # 결과 출력 (검색어와 똑같은 글자가 있으면 강조됩니다)
         with st.expander(f"[{item_code}] {match_text.split(' > ')[-1]} (일치율: {score}%)"):
             st.write(f"**전체 경로:** {match_text}")
             st.progress(score / 100)
