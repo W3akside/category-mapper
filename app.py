@@ -1,29 +1,38 @@
 import streamlit as st
+from sentence_transformers import SentenceTransformer, util
 import google.generativeai as genai
-import json
+import torch
 
-# --- [1] 제미나이 설정 (복사한 API 키를 여기에 넣으세요) ---
+# --- [1] 설정: 제미나이 & 로컬 AI ---
+# API 키를 여기에 꼭 넣어주세요!
 genai.configure(api_key="AIzaSyCVlOoyvOqbmh3FvxiTSCWBFwBTQT1ubmg")
-model = genai.GenerativeModel('gemini-1.5-flash')
+gemini_model = genai.GenerativeModel('gemini-1.5-flash')
 
-# --- [2] 화면 설정: 중앙 정렬 (폭 700px 제한) ---
-st.set_page_config(layout="centered", page_title="Gemini AI 분석기")
+@st.cache_resource
+def load_local_model():
+    return SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+
+local_model = load_local_model()
+
+# --- [2] 화면 설정: 중앙 정렬 고정 (폭 700px) ---
+st.set_page_config(layout="centered", page_title="카테고리 AI 분석기")
 
 st.markdown("""
     <style>
-    .block-container { max-width: 700px !important; padding-top: 2rem; }
-    .stMetric { background-color: #f8f9fa; padding: 10px; border-radius: 8px; border: 1px solid #eee; }
-    hr { margin: 0.8rem 0px !important; }
+    .main .block-container {
+        max-width: 700px !important;
+        padding-top: 2rem;
+    }
+    .stMetric { background-color: #f8f9fa; padding: 5px; border-radius: 5px; border: 1px solid #eee; }
+    hr { margin: 0.5rem 0px !important; }
     div[data-testid="stCaptionContainer"] { font-size: 0.85rem; color: #666; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🚀 Gemini 차세대 AI 분석기")
+st.title("🚀 하이브리드 지능형 카테고리 분석기")
 
-# --- [3] 데이터 입력 구간 (여기가 제일 중요합니다!) ---
-# "K01010101: 카테고리명" 이런 형식이면 한 줄에 하나씩 다 들어갑니다.
-raw_data = """
-"K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
+# --- [3] 데이터 (1,836개) ---
+# CATEGORY_DATA ={ "K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
 "K01010103" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지플레이트",
 "K01010104" : "연료/화학 > 고무/수지 > 고무/수지 > 플라스틱",
@@ -1859,46 +1868,46 @@ raw_data = """
 "K17100202" : "특수분야 > 용역/비용 > 비용 > 입찰수수료",
 "K17100203" : "특수분야 > 용역/비용 > 비용 > 통관료",
 "K17100204" : "특수분야 > 용역/비용 > 비용 > 화물택배비",
-""" 
-# ↑↑↑ 위 예시들을 지우고 1,836개 데이터를 여기에 다 붙여넣으세요 ↑↑↑
+}
 
 query = st.text_input("분석할 품명/규격을 입력하세요", placeholder="예: k2 안전화")
 
 if query:
-    with st.spinner('제미나이가 데이터의 맥락을 읽는 중...'):
-        # 제미나이에게 보내는 특급 가이드
-        prompt = f"""
-        당신은 산업 자재 분류 전문가입니다.
-        아래 [카테고리 목록]을 보고 [입력 단어]와 가장 잘 어울리는 카테고리 3개를 선정하세요.
-        브랜드명보다는 제품의 본질적 용도(신발, 강판 등)를 우선하여 판단하세요.
-
-        [입력 단어]: {query}
-        [카테고리 목록]:
-        {raw_data}
-
-        반드시 아래 JSON 형식으로만 응답하세요:
-        [
-          {{"rank": 1, "code": "코드", "path": "전체경로", "reason": "선정 이유(15자 이내)"}},
-          {{"rank": 2, "code": "코드", "path": "전체경로", "reason": "선정 이유(15자 이내)"}},
-          {{"rank": 3, "code": "코드", "path": "전체경로", "reason": "선정 이유(15자 이내)"}}
-        ]
-        """
+    with st.spinner('제미나이가 의미를 확장하는 중...'):
+        # Step 1: 제미나이가 검색어의 의미적 연관 키워드 추출
+        prompt = f"입력된 단어 '{query}'와 연관된 산업 자재 카테고리용 핵심 키워드를 5개만 뽑아줘. 결과는 다른 설명 없이 쉼표로만 구분해줘. (예: 안전화 -> 신발, 작업화, 발 보호구)"
         
         try:
-            response = model.generate_content(prompt)
-            # JSON만 추출
-            json_text = response.text.replace('```json', '').replace('```', '').strip()
-            results = json.loads(json_text)
+            response = gemini_model.generate_content(prompt)
+            # 원래 검색어 + 제미나이 추천 키워드 합체
+            expanded_query = f"{query}, {response.text.strip()}"
+            st.caption(f"🔍 AI 연관 검색어 확장: {expanded_query}")
+        except:
+            expanded_query = query # 제미나이 오류 시 원래 단어 사용
 
+        # Step 2: 로컬 AI가 확장된 키워드로 1,836개 중 매칭
+        codes = list(CATEGORY_DATA.keys())
+        descriptions = list(CATEGORY_DATA.values())
+
+        query_emb = local_model.encode(expanded_query, convert_to_tensor=True)
+        desc_emb = local_model.encode(descriptions, convert_to_tensor=True)
+        scores = util.pytorch_cos_sim(query_emb, desc_emb)[0]
+        
+        top_results = torch.topk(scores, k=5)
+        
+        st.write("---")
+        for i, (score, idx) in enumerate(zip(top_results.values, top_results.indices)):
+            confidence = float(score) * 100
+            path = descriptions[idx]
+            code = codes[idx]
+            
+            col1, col2, col3 = st.columns([1.5, 6.5, 2])
+            with col1:
+                st.markdown(f"**{i+1}순위**")
+            with col2:
+                st.markdown(f"`{code}` **{path.split(' > ')[-1]}**")
+                st.caption(f"📍 {path}")
+            with col3:
+                # 100% 안 넘게 보정
+                st.metric("", f"{min(confidence, 99.9):.1f}%")
             st.write("---")
-            for res in results:
-                c1, c2 = st.columns([7.5, 2.5])
-                with c1:
-                    st.markdown(f"**{res['rank']}순위** | `[{res['code']}]` **{res['path'].split(' > ')[-1]}**")
-                    st.caption(f"📍 {res['path']}")
-                    st.caption(f"💡 {res['reason']}")
-                with c2:
-                    st.empty() # 디자인을 위해 우측은 비워둠
-                st.write("---")
-        except Exception as e:
-            st.error("데이터가 너무 많거나 분석 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.")
