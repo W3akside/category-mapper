@@ -10,7 +10,6 @@ gemini_model = genai.GenerativeModel('gemini-1.5-flash')
 
 @st.cache_resource
 def load_local_model():
-    # 다국어 지원 및 문맥 이해가 좋은 모델
     return SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
 
 local_model = load_local_model()
@@ -20,28 +19,27 @@ st.set_page_config(layout="centered", page_title="지능형 카테고리 분석�
 
 st.markdown("""
     <style>
-    /* 전체 폭 제한 및 배경색 */
+    /* 전체 폭 제한 */
     .main .block-container { max-width: 750px !important; padding-top: 2rem; }
     
-    /* 'N순위' 글자 스타일 (2배 크기) */
-    .rank-label { font-size: 2.2rem !important; font-weight: 800; color: #1E1E1E; }
+    /* 'N순위' 글자 스타일 (요청하신 대로 2.2배 크기) */
+    .rank-text { font-size: 2.2rem !important; font-weight: 800; color: #1E1E1E; margin-bottom: 5px; }
     
-    /* 카테고리 경로 및 코드 (1.5배 크기) */
-    .category-info { font-size: 1.3rem !important; color: #333; line-height: 1.6; margin-top: 5px; }
-    .category-code { background-color: #f0f0f0; padding: 2px 8px; border-radius: 4px; font-weight: bold; color: #007bff; }
+    /* 카테고리 정보 및 코드 (모든 순위 동일하게 1.5배 수준) */
+    .cat-path { font-size: 1.3rem !important; color: #333; line-height: 1.6; }
+    .cat-code { background-color: #f0f0f0; padding: 2px 8px; border-radius: 4px; font-weight: bold; color: #007bff; }
     
-    /* 정확도 숫자 스타일 (순위 글자와 비슷한 크기) */
-    .confidence-val { font-size: 2.1rem !important; font-weight: 800; color: #007bff; text-align: right; }
+    /* 정확도 숫자 (순위 글자와 밸런스 맞춤) */
+    .score-val { font-size: 2.1rem !important; font-weight: 800; color: #007bff; text-align: right; }
     
-    /* 구분선 및 간격 조정 */
     hr { margin: 1.5rem 0px !important; border: 0.5px solid #eee; }
-    .stTextInput > div > div > input { font-size: 1.2rem !important; }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("🚀 지능형 카테고리 분석기")
 
 # --- [3] 데이터 바구니 (1,836개 데이터를 여기에 유지하세요) ---
+# 형식: "코드": "전체 경로",
 CATEGORY_DATA = {
 "K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
@@ -1884,9 +1882,9 @@ CATEGORY_DATA = {
 query = st.text_input("분석할 품명/규격을 입력하세요", placeholder="예: k2 안전화")
 
 if query:
-    with st.spinner('AI가 최적의 카테고리를 분석 중입니다...'):
+    with st.spinner('AI가 최적의 카테고리를 찾는 중...'):
         # Step 1: 제미나이 키워드 확장 (형님 아이디어)
-        prompt = f"입력어 '{query}'와 관련된 산업 자재 카테고리 키워드 5개만 쉼표로 알려줘. (예: 안전화 -> 신발, 작업화, 발 보호구)"
+        prompt = f"'{query}'와 관련된 산업 자재 키워드 5개만 쉼표로 알려줘. (예: 안전화 -> 신발, 작업화, 발 보호구)"
         try:
             response = gemini_model.generate_content(prompt)
             gemini_keywords = response.text.strip()
@@ -1894,17 +1892,40 @@ if query:
         except:
             gemini_keywords = ""
 
-        # Step 2: 로컬 AI 검색 및 가중치 계산
+        # Step 2: 로컬 AI 검색 및 점수 계산
         codes = list(CATEGORY_DATA.keys())
         descriptions = list(CATEGORY_DATA.values())
 
-        # 의미 기반 매칭
         query_emb = local_model.encode(query + " " + gemini_keywords, convert_to_tensor=True)
         desc_emb = local_model.encode(descriptions, convert_to_tensor=True)
         scores = util.pytorch_cos_sim(query_emb, desc_emb)[0]
 
-        # 단어 직접 포함 가중치 (안전화 -> 안전화 우선)
+        # 단어 가중치 가산 (안전화 검색 시 안전화 우선 순위)
         final_scores = scores.clone()
         clean_query = query.replace(" ", "")
         for i, desc in enumerate(descriptions):
-            category_name
+            c_name = desc.split(" > ")[-1]
+            if clean_query in c_name or c_name in clean_query:
+                final_scores[i] += 0.25
+
+        top_results = torch.topk(final_scores, k=5)
+        
+        st.write("---")
+        for i, (score, idx) in enumerate(zip(top_results.values, top_results.indices)):
+            conf = float(score) * 100
+            path = descriptions[idx]
+            code = codes[idx]
+            
+            col1, col2 = st.columns([7.5, 2.5])
+            
+            with col1:
+                # 'N순위' 글자 크게
+                st.markdown(f'<div class="rank-text">{i+1}순위</div>', unsafe_allow_html=True)
+                # 코드와 경로 (순위 상관없이 동일 크기)
+                st.markdown(f'<div class="cat-path"><span class="cat-code">{code}</span><br>{path}</div>', unsafe_allow_html=True)
+                
+            with col2:
+                # 정확도 점수 크게
+                st.markdown(f'<div class="score-val">{min(conf, 99.9):.1f}%</div>', unsafe_allow_html=True)
+            
+            st.write("---")
