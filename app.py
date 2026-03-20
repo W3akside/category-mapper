@@ -1843,7 +1843,7 @@ CATEGORY_DATA = {
 
 # --- 앱 화면 꾸미기 ---
 st.set_page_config(page_title="카테고리 매퍼", layout="centered")
-st.title("🔍 KeP 카테고리 검색기")
+st.title("🔍 우리회사 카테고리 검색기")
 st.info("품명이나 규격을 입력하면 가장 유사한 카테고리를 찾아줍니다.")
 
 query = st.text_input("검색어를 입력하세요 (예: 실납, 고무, 택배)")
