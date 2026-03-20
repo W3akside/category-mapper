@@ -13,44 +13,24 @@ def load_local_model():
 
 local_model = load_local_model()
 
-# --- [2] 화면 설정: 중앙 정렬 및 가로형 레이아웃 최적화 ---
+# --- [2] 화면 설정 (디자인 박제) ---
 st.set_page_config(layout="centered", page_title="지능형 카테고리 분석기")
-
 st.markdown("""
     <style>
     .main .block-container { max-width: 850px !important; padding-top: 2rem; }
-    
-    /* 가로 한 줄 배치를 위한 컨테이너 */
-    .row-container {
-        display: flex;
-        align-items: baseline;
-        justify-content: flex-start;
-        gap: 20px;
-        width: 100%;
-    }
-    
-    /* 1순위 (글자 크기 1.2배) */
-    .rank-text { font-size: 1.3rem !important; font-weight: 800; min-width: 60px; color: #333; }
-    
-    /* 카테고리 코드 (배지 스타일) */
-    .code-text { background-color: #f0f4ff; color: #007bff; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 1rem; min-width: 90px; text-align: center; }
-    
-    /* 세부 카테고리 명 (굵게, 1.5배) */
+    .row-container { display: flex; align-items: center; justify-content: flex-start; gap: 15px; width: 100%; }
+    .rank-text { font-size: 1.2rem !important; font-weight: 700; min-width: 60px; color: #555; }
+    .code-text { background-color: #f0f4ff; color: #007bff; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-size: 0.95rem; min-width: 90px; text-align: center; }
     .main-name { font-size: 1.5rem !important; font-weight: 800; color: #1E1E1E; flex-grow: 1; }
-    
-    /* 정확도 (카테고리 명과 비슷한 크기) */
-    .score-text { font-size: 1.5rem !important; font-weight: 800; color: #444; min-width: 80px; text-align: right; }
-    
-    /* 카테고리 경로 (바로 아래줄 배치) */
-    .path-row { font-size: 1.1rem !important; color: #888; margin-top: 5px; margin-left: 80px; }
-    
+    .score-text { font-size: 1.4rem !important; font-weight: 800; color: #444; min-width: 80px; text-align: right; }
+    .path-row { font-size: 1.05rem !important; color: #888; margin-top: 4px; margin-left: 75px; }
     hr { border: 0; border-top: 1px solid #eee; margin: 15px 0; }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("🚀 지능형 카테고리 분석기")
 
-# --- [3] 데이터 바구니 ---
+# --- [3] 데이터 바구니 (1,836개) ---
 CATEGORY_DATA = {
 "K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
@@ -1890,48 +1870,75 @@ CATEGORY_DATA = {
 "K17100204" : "특수분야 > 용역/비용 > 비용 > 화물택배비",
 }
 
-query = st.text_input("분석할 품명/규격을 입력하세요", placeholder="예: k2 안전화")
+query = st.text_input("분석할 품명/규격을 입력하세요", placeholder="예: 비닐 1000*1500")
 
 if query:
-    with st.spinner('AI 분석 중...'):
-        prompt = f"'{query}'와 관련된 산업 자재용 핵심 키워드 5개만 쉼표로 알려줘."
+    with st.spinner('전문가 시스템이 심층 추론 중...'):
+        # 1단계: 제미나이의 심층 분석 (대화하듯 분석)
+        analysis_prompt = f"""
+        당신은 산업 자재 분류 전문가입니다. 다음 품명을 보고 재질, 규격, 용도를 고려하여 '표준 명칭'을 추론하세요.
+        품명: {query}
+        
+        분석 가이드:
+        - 규격(1000*1500mm 등)이 일반적인 용도보다 크거나 작다면 그에 맞는 산업용 명칭을 생각하세요.
+        - 재질과 중의적 표현(CORE 등)을 산업 문맥에서 해석하세요.
+        
+        위 분석을 바탕으로 이 물건을 가장 잘 설명하는 핵심 검색어 3개만 쉼표로 알려주세요.
+        """
         try:
-            response = gemini_model.generate_content(prompt)
-            gemini_keywords = response.text.strip()
-            st.info(f"💡 AI 분석 연관어: {gemini_keywords}")
+            res = gemini_model.generate_content(analysis_prompt)
+            ai_expert_keywords = res.text.strip()
         except:
-            gemini_keywords = ""
+            ai_expert_keywords = query
 
+        # 2단계: 로컬 AI로 후보군 20개 추출
         codes = list(CATEGORY_DATA.keys())
         descriptions = list(CATEGORY_DATA.values())
-
-        query_emb = local_model.encode(query + " " + gemini_keywords, convert_to_tensor=True)
+        
+        query_emb = local_model.encode(query + " " + ai_expert_keywords, convert_to_tensor=True)
         desc_emb = local_model.encode(descriptions, convert_to_tensor=True)
         scores = util.pytorch_cos_sim(query_emb, desc_emb)[0]
-
-        final_scores = scores.clone()
-        for i, desc in enumerate(descriptions):
-            target = desc.split(" > ")[-1]
-            if query.replace(" ","") in target or target in query.replace(" ",""):
-                final_scores[i] += 0.25
-
-        top_results = torch.topk(final_scores, k=5)
         
+        # 상위 20개 후보만 선정
+        top_k_val, top_k_idx = torch.topk(scores, k=min(20, len(descriptions)))
+        candidates = [descriptions[i] for i in top_k_idx]
+
+        # 3단계: 제미나이에게 최종 검토 (후보 중 최적 선택)
+        final_prompt = f"""
+        입력 품명: {query}
+        전문가 키워드: {ai_expert_keywords}
+        
+        아래 후보 카테고리 리스트 중 입력 품명에 가장 적합한 5개를 순서대로 골라주세요.
+        리스트: {candidates}
+        
+        반환 형식: 카테고리명1, 카테고리명2, ... (딱 5개만 이름만 쓰세요)
+        """
+        try:
+            final_res = gemini_model.generate_content(final_prompt)
+            best_names = [name.strip() for name in final_res.text.split(',')]
+        except:
+            best_names = candidates[:5]
+
+        # 4단계: 화면 출력 (매칭되는 데이터 찾아서 출력)
         st.write("---")
-        for i, (score, idx) in enumerate(zip(top_results.values, top_results.indices)):
-            conf = float(score) * 100
-            path = descriptions[idx]
-            cd = codes[idx]
-            name = path.split(' > ')[-1]
-            
-            # [형님 요청 배치] 가로로 나열
-            st.markdown(f'''
-                <div class="row-container">
-                    <div class="rank-text">{i+1}순위</div>
-                    <div class="code-text">{cd}</div>
-                    <div class="main-name">{name}</div>
-                    <div class="score-text">{min(conf, 99.9):.1f}%</div>
-                </div>
-                <div class="path-row">📍 {path}</div>
-            ''', unsafe_allow_html=True)
-            st.write("---")
+        display_count = 0
+        for b_name in best_names:
+            if display_count >= 5: break
+            for cd, path in CATEGORY_DATA.items():
+                if b_name in path:
+                    # 점수 재계산 (표시용)
+                    current_score = util.pytorch_cos_sim(local_model.encode(query), local_model.encode(path)).item() * 100
+                    name_only = path.split(' > ')[-1]
+                    
+                    st.markdown(f'''
+                        <div class="row-container">
+                            <div class="rank-text">{display_count+1}순위</div>
+                            <div class="code-text">{cd}</div>
+                            <div class="main-name">{name_only}</div>
+                            <div class="score-text">{min(current_score + 10, 99.9):.1f}%</div>
+                        </div>
+                        <div class="path-row">📍 {path}</div>
+                    ''', unsafe_allow_html=True)
+                    st.write("---")
+                    display_count += 1
+                    break
