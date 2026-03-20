@@ -3,34 +3,21 @@ from sentence_transformers import SentenceTransformer, util
 import google.generativeai as genai
 import torch
 
-# --- [1] 설정: 제미나이 & 로컬 AI ---
-# API 키를 여기에 넣어주세요
+# --- [1] 설정 ---
 genai.configure(api_key="AIzaSyCVlOoyvOqbmh3FvxiTSCWBFwBTQT1ubmg")
 gemini_model = genai.GenerativeModel('gemini-1.5-flash')
 
 @st.cache_resource
 def load_local_model():
-    # 한국어 처리에 강한 다국어 모델 사용
     return SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
 
 local_model = load_local_model()
 
-# --- [2] 화면 설정: 중앙 정렬 고정 ---
-st.set_page_config(layout="centered", page_title="지능형 카테고리 분석기")
+# --- [2] 화면 설정 ---
+st.set_page_config(layout="centered", page_title="완벽 카테고리 분석기")
+st.markdown("<style>.block-container { max-width: 700px !important; }</style>", unsafe_allow_html=True)
 
-st.markdown("""
-    <style>
-    .main .block-container { max-width: 700px !important; padding-top: 2rem; }
-    .stMetric { background-color: #f8f9fa; padding: 10px; border-radius: 8px; border: 1px solid #eee; }
-    hr { margin: 0.8rem 0px !important; }
-    div[data-testid="stCaptionContainer"] { font-size: 0.85rem; color: #666; }
-    </style>
-    """, unsafe_allow_html=True)
-
-st.title("🚀 지능형 카테고리 분석기")
-
-# --- [3] 데이터 바구니 (여기에 1,836개 데이터를 넣으세요) ---
-# 형식: "코드": "전체 경로", (마지막 쉼표 주의!)
+# --- [3] 데이터 ---
 CATEGORY_DATA = {
 "K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
@@ -1870,28 +1857,39 @@ CATEGORY_DATA = {
 "K17100204" : "특수분야 > 용역/비용 > 비용 > 화물택배비",
 }
 
+st.title("🚀 지능형 카테고리 분석기")
 query = st.text_input("분석할 품명/규격을 입력하세요", placeholder="예: k2 안전화")
 
 if query:
-    with st.spinner('제미나이가 의미를 확장하는 중...'):
-        # Step 1: 제미나이 키워드 확장 (핵심 아이디어!)
-        prompt = f"입력어 '{query}'와 관련된 산업 자재 카테고리 키워드 5개만 쉼표로 알려줘. (예: 안전화 -> 신발, 작업화, 발 보호구)"
+    with st.spinner('제미나이가 문맥을 파악 중...'):
+        # Step 1: 제미나이의 문맥 확장
+        prompt = f"입력어 '{query}'와 관련된 산업 자재용 핵심 키워드 5개만 쉼표로 알려줘. (예: 안전화 -> 신발, 작업화, 발 보호구)"
         try:
             response = gemini_model.generate_content(prompt)
-            expanded_query = f"{query}, {response.text.strip()}"
-            st.info(f"🔍 AI 분석 연관어: {response.text.strip()}")
+            gemini_keywords = response.text.strip()
+            st.info(f"🔍 AI 분석 키워드: {gemini_keywords}")
         except:
-            expanded_query = query
+            gemini_keywords = ""
 
-        # Step 2: 로컬 AI 검색
         codes = list(CATEGORY_DATA.keys())
         descriptions = list(CATEGORY_DATA.values())
 
-        query_emb = local_model.encode(expanded_query, convert_to_tensor=True)
+        # Step 2: 의미 기반 점수 계산
+        query_emb = local_model.encode(query + " " + gemini_keywords, convert_to_tensor=True)
         desc_emb = local_model.encode(descriptions, convert_to_tensor=True)
         scores = util.pytorch_cos_sim(query_emb, desc_emb)[0]
-        
-        top_results = torch.topk(scores, k=5)
+
+        # Step 3: [핵심] 단어 직접 매칭 가중치 부여
+        # 입력한 단어가 카테고리 이름에 '정확히' 있으면 점수를 확 높임
+        final_scores = scores.clone()
+        clean_query = query.replace(" ", "")
+        for i, desc in enumerate(descriptions):
+            # 카테고리 마지막 단어(핵심)가 검색어에 포함되거나 그 반대일 때
+            category_name = desc.split(" > ")[-1]
+            if clean_query in category_name or category_name in clean_query:
+                final_scores[i] += 0.3 # 30% 보너스 점수 (무조건 역전 가능)
+
+        top_results = torch.topk(final_scores, k=5)
         
         st.write("---")
         for i, (score, idx) in enumerate(zip(top_results.values, top_results.indices)):
@@ -1900,11 +1898,11 @@ if query:
             code = codes[idx]
             
             col1, col2, col3 = st.columns([1.5, 6.5, 2])
-            with col1:
-                st.markdown(f"**{i+1}순위**")
+            with col1: st.markdown(f"**{i+1}순위**")
             with col2:
                 st.markdown(f"`{code}` **{path.split(' > ')[-1]}**")
                 st.caption(f"📍 {path}")
             with col3:
+                # 안전한 소수점 출력 확인 완료
                 st.metric("", f"{min(confidence, 99.9):.1f}%")
             st.write("---")
