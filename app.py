@@ -1,4 +1,5 @@
 import streamlit as st
+from fuzzywuzzy import fuzz
 from fuzzywuzzy import process
 
 # --- 여기에 형님의 1,836개 데이터를 넣으세요 ---
@@ -1852,7 +1853,7 @@ if query:
     choices = list(CATEGORY_DATA.values())
     
     # [수정포인트 1] scorer를 추가해서 "진짜 그 단어"가 포함된 것 위주로 찾게 바꿨습니다.
-    results = process.extract(query, choices, limit=5, scorer=process.token_set_ratio)
+    results = process.extract(query, choices, limit=5, scorer=fuzz.token_set_ratio)
     
     st.write("---")
     for match_text, score in results:
