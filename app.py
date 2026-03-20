@@ -1,17 +1,18 @@
 import streamlit as st
 from sentence_transformers import SentenceTransformer, util
 import torch
+import re
 
-# 1. 모델 로드 (가장 균형 잡힌 다국어 모델로 변경 제안)
+# 1. AI 모델 설정 (다국어 고성능 모델)
 @st.cache_resource
 def load_model():
     return SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
 
 model = load_model()
 
-# --- 데이터 (형님의 1,836개 데이터를 여기에 유지하세요) ---
+# --- 데이터 (여기에 형님의 1,836개 데이터를 유지하세요) ---
 CATEGORY_DATA = {
-   "K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
+"K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
 "K01010103" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지플레이트",
 "K01010104" : "연료/화학 > 고무/수지 > 고무/수지 > 플라스틱",
@@ -1849,23 +1850,19 @@ CATEGORY_DATA = {
 "K17100204" : "특수분야 > 용역/비용 > 비용 > 화물택배비",
 }
 
-# --- 화면 중앙 정렬 및 여백 조절 ---
-st.set_page_config(layout="wide") # 내부 계산을 위해 wide는 유지하되
+# --- 화면 중앙 정렬 및 디자인 설정 ---
+st.set_page_config(layout="wide", page_title="AI 카테고리 분석기")
 
-# CSS로 검색창과 결과의 최대 폭을 제한 (가운데 정렬 효과)
 st.markdown("""
     <style>
     .main .block-container {
-        max-width: 800px; /* 딱 보기 좋은 너비로 제한 */
+        max-width: 850px;
         padding-top: 2rem;
-        padding-bottom: 2rem;
     }
-    .stMetric { background-color: #f0f2f6; padding: 5px; border-radius: 5px; }
-    hr { margin: 0.5rem 0px !important; }
-    /* 확신도 글자 크기 살짝 줄이기 */
-    [data-testid="stMetricValue"] {
-        font-size: 1.5rem !important;
-    }
+    .stMetric { background-color: #f8f9fa; padding: 10px; border-radius: 8px; border: 1px solid #e9ecef; }
+    hr { margin: 0.8rem 0px !important; }
+    [data-testid="stMetricValue"] { font-size: 1.4rem !important; color: #007bff; }
+    div[data-testid="stCaptionContainer"] { font-size: 0.85rem; color: #6c757d; margin-top: -5px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -1873,34 +1870,53 @@ st.title("🧠 AI 카테고리 지능형 분석기")
 st.info("품명이나 규격을 입력하면 AI가 맥락을 분석해 가장 적절한 카테고리를 찾아줍니다.")
 
 # 검색창
-query = st.text_input("분석할 품명/규격을 입력하세요", placeholder="예: (주)세중 전기강판 30PH105*100")
+query = st.text_input("분석할 품명/규격을 입력하세요")
 
 if query:
     with st.spinner('인공지능이 맥락을 분석 중입니다...'):
-        # ... (이전의 분석 로직: model.encode 등은 그대로 유지) ...
-        # (중략 - 혹시 코드가 필요하시면 위쪽 '분석 로직'을 그대로 쓰세요)
+        # 분석 로직 시작
+        codes = list(CATEGORY_DATA.keys())
+        descriptions = list(CATEGORY_DATA.values())
+        
+        # 불필요한 특수문자 제거로 정확도 향상
+        clean_query = re.sub(r'[^a-zA-Z0-9가-힣\s]', ' ', query)
+        
+        # 문장 임베딩 및 유사도 계산
+        query_embedding = model.encode(clean_query, convert_to_tensor=True)
+        category_embeddings = model.encode(descriptions, convert_to_tensor=True)
+        cosine_scores = util.pytorch_cos_sim(query_embedding, category_embeddings)[0]
+        
+        # 상위 5개 결과 추출
+        top_results = torch.topk(cosine_scores, k=5)
         
         st.write("### 🎯 분석 결과")
         st.write("---")
         
+        found = False
         for i, (score, idx) in enumerate(zip(top_results.values, top_results.indices)):
-            match_text = descriptions[idx]
-            item_code = codes[idx]
             confidence = float(score) * 100
-            
             if confidence < 15: continue
             
-            # 레이아웃: 좌(순위), 중(내용), 우(확신도)
-            c1, c2, c3 = st.columns([1.5, 6.5, 2])
-            with c1:
-                st.markdown(f"**{i+1}순위**")
-            with c2:
-                # 코드와 소분류명을 강조
-                st.markdown(f"`[{item_code}]` **{match_text.split(' > ')[-1]}**")
-                # 전체 경로는 바로 아래 작게
-                st.caption(f"📍 {match_text}")
-            with c3:
-                # 우측에 확신도 수치만 깔끔하게
-                st.metric("", f"{confidence:.1f}%")
+            found = True
+            match_text = descriptions[idx]
+            item_code = codes[idx]
             
-            st.markdown("<hr>", unsafe_allow_html=True)
+            # 레이아웃: [순위 | 내용 | 확신도]
+            col1, col2, col3 = st.columns([1.5, 6.5, 2])
+            
+            with col1:
+                st.markdown(f"**{i+1}순위**")
+            
+            with col2:
+                # 소분류명 강조 및 코드 표시
+                st.markdown(f"`[{item_code}]` **{match_text.split(' > ')[-1]}**")
+                st.caption(f"📍 {match_text}")
+            
+            with col3:
+                # 우측에 깔끔하게 확신도 수치만 표시
+                st.metric("확신도", f"{confidence:.1f}%")
+            
+            st.write("---")
+
+        if not found:
+            st.warning("⚠️ 입력하신 내용과 의미적으로 유사한 카테고리를 찾지 못했습니다.")
