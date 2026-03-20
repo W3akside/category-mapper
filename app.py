@@ -13,9 +13,31 @@ def load_local_model():
 
 local_model = load_local_model()
 
-# --- [2] 화면 설정 ---
-st.set_page_config(layout="centered", page_title="완벽 카테고리 분석기")
-st.markdown("<style>.block-container { max-width: 700px !important; }</style>", unsafe_allow_html=True)
+# --- [2] 화면 설정: 중앙 정렬 및 글자 크기 최적화 ---
+st.set_page_config(layout="centered", page_title="지능형 카테고리 분석기")
+
+st.markdown("""
+    <style>
+    /* 전체 폭 제한 */
+    .main .block-container { max-width: 750px !important; padding-top: 2rem; }
+    
+    /* 1순위 제목 스타일 (2배 크기) */
+    .top-rank { font-size: 2.2rem !important; font-weight: 800; color: #1E1E1E; margin-bottom: 5px; }
+    
+    /* 나머지 순위 제목 스타일 (1.5배 크기) */
+    .sub-rank { font-size: 1.6rem !important; font-weight: 700; color: #333; }
+    
+    /* 카테고리 경로 및 코드 (1.5배 크기) */
+    .category-path { font-size: 1.2rem !important; color: #666; line-height: 1.5; }
+    .category-code { background-color: #eee; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 1.1rem; }
+    
+    /* 정확도 숫자 스타일 (1순위 제목과 비슷한 크기로 조정) */
+    .confidence-text { font-size: 2rem !important; font-weight: 800; color: #007bff; text-align: right; }
+    
+    /* 구분선 간격 */
+    hr { margin: 1.5rem 0px !important; }
+    </style>
+    """, unsafe_allow_html=True)
 
 # --- [3] 데이터 ---
 CATEGORY_DATA = {
@@ -1891,18 +1913,28 @@ if query:
 
         top_results = torch.topk(final_scores, k=5)
         
-        st.write("---")
-        for i, (score, idx) in enumerate(zip(top_results.values, top_results.indices)):
-            confidence = float(score) * 100
-            path = descriptions[idx]
-            code = codes[idx]
-            
-            col1, col2, col3 = st.columns([1.5, 6.5, 2])
-            with col1: st.markdown(f"**{i+1}순위**")
-            with col2:
-                st.markdown(f"`{code}` **{path.split(' > ')[-1]}**")
-                st.caption(f"📍 {path}")
-            with col3:
-                # 안전한 소수점 출력 확인 완료
-                st.metric("", f"{min(confidence, 99.9):.1f}%")
-            st.write("---")
+       st.write("---")
+for i, (score, idx) in enumerate(zip(top_results.values, top_results.indices)):
+    confidence = float(score) * 100
+    path = descriptions[idx]
+    code = codes[idx]
+    main_name = path.split(' > ')[-1] # 마지막 카테고리명
+    
+    # 순위에 따른 클래스 설정
+    rank_class = "top-rank" if i == 0 else "sub-rank"
+    
+    col1, col2 = st.columns([7.5, 2.5])
+    
+    with col1:
+        # 순위와 카테고리명 (크게)
+        st.markdown(f'<div class="{rank_class}">{i+1}순위 | {main_name}</div>', unsafe_allow_html=True)
+        # 코드와 경로 (시원하게)
+        st.markdown(f'<div class="category-path"><span class="category-code">{code}</span> {path}</div>', unsafe_allow_html=True)
+        # 제미나이 이유 (선택 사항)
+        # st.caption(f"💡 분석 근거: {gemini_keywords}") 
+        
+    with col2:
+        # 정확도 (1순위 제목과 밸런스 맞춤)
+        st.markdown(f'<div class="confidence-text">{min(confidence, 99.9):.1f}%</div>', unsafe_allow_html=True)
+    
+    st.write("---")
