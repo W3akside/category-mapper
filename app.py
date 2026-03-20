@@ -1905,7 +1905,38 @@ if query:
         codes = list(CATEGORY_DATA.keys())
         descriptions = list(CATEGORY_DATA.values())
 
-        # 검색 로직
+# 검색 로직
         query_emb = local_model.encode(query + " " + gemini_keywords, convert_to_tensor=True)
         desc_emb = local_model.encode(descriptions, convert_to_tensor=True)
-        scores = util.pytorch_cos_sim(query_emb
+        scores = util.pytorch_cos_sim(query_emb, desc_emb)[0]
+
+        # 직접 매칭 가산점
+        final_scores = scores.clone()
+        for i, desc in enumerate(descriptions):
+            target = desc.split(" > ")[-1]
+            if query.replace(" ","") in target or target in query.replace(" ",""):
+                final_scores[i] += 0.25
+
+        top_results = torch.topk(final_scores, k=5)
+        
+        for i, (score, idx) in enumerate(zip(top_results.values, top_results.indices)):
+            conf = float(score) * 100
+            full_path = descriptions[idx]
+            cat_code = codes[idx]
+            main_cat = full_path.split(' > ')[-1]
+            
+            # 형님이 좋아하시던 그 박스 구성
+            st.markdown(f'''
+                <div class="result-box">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div style="flex: 8;">
+                            <div class="rank-label">{i+1}순위</div>
+                            <div class="category-title"><span class="code-badge">{cat_code}</span> {main_cat}</div>
+                            <div class="path-text">📍 {full_path}</div>
+                        </div>
+                        <div style="flex: 2;" class="score-text">
+                            {min(conf, 99.9):.1f}%
+                        </div>
+                    </div>
+                </div>
+            ''', unsafe_allow_html=True)
