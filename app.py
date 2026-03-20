@@ -2,16 +2,16 @@ import streamlit as st
 from sentence_transformers import SentenceTransformer, util
 import torch
 
-# 1. 인공지능 모델 불러오기 (한국어와 영어를 동시에 이해하는 모델)
+# 1. 모델 로드 (가장 균형 잡힌 다국어 모델로 변경 제안)
 @st.cache_resource
 def load_model():
-    return SentenceTransformer('snunlp/KR-SBERT-V40K-klueNLI-augSTS')
+    return SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
 
 model = load_model()
 
-# --- 데이터 (여기에 1,836개 데이터를 넣으세요) ---
+# --- 데이터 (형님의 1,836개 데이터를 여기에 유지하세요) ---
 CATEGORY_DATA = {
-"K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
+   "K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
 "K01010103" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지플레이트",
 "K01010104" : "연료/화학 > 고무/수지 > 고무/수지 > 플라스틱",
@@ -1849,47 +1849,53 @@ CATEGORY_DATA = {
 "K17100204" : "특수분야 > 용역/비용 > 비용 > 화물택배비",
 }
 
-st.title("🧠 AI 카테고리 지능형 분석기")
-st.info("단순 단어 매칭이 아닌, 문맥을 분석하여 가장 적절한 카테고리를 추천합니다.")
+# --- 화면 상단 디자인 (여백 축소) ---
+st.set_page_config(layout="wide") # 넓게 써서 한눈에 들어오게 변경
+st.markdown("""
+    <style>
+    .reportview-container .main .block-container { padding-top: 1rem; }
+    .stMetric { background-color: #f0f2f6; padding: 5px; border-radius: 5px; }
+    hr { margin: 0.5rem 0px !important; }
+    </style>
+    """, unsafe_allow_html=True)
 
-query = st.text_input("분석할 품명/규격을 입력하세요")
+st.title("🧠 AI 카테고리 지능형 분석기")
+
+query = st.text_input("분석할 품명/규격을 입력하세요", placeholder="예: (주)세중 전기강판 30PH105*100")
 
 if query:
-    with st.spinner('인공지능이 맥락을 분석 중입니다...'):
+    with st.spinner('분석 중...'):
         codes = list(CATEGORY_DATA.keys())
         descriptions = list(CATEGORY_DATA.values())
         
-        query_embedding = model.encode(query, convert_to_tensor=True)
+        # 검색어에서 불필요한 특수문자 제거 후 분석
+        import re
+        clean_query = re.sub(r'[^\w\s]', ' ', query)
+        
+        query_embedding = model.encode(clean_query, convert_to_tensor=True)
         category_embeddings = model.encode(descriptions, convert_to_tensor=True)
         
         cosine_scores = util.pytorch_cos_sim(query_embedding, category_embeddings)[0]
         top_results = torch.topk(cosine_scores, k=5)
         
         st.write("### 🎯 분석 결과")
-        st.write("---")
         
-        rank = 1
-        for score, idx in zip(top_results.values, top_results.indices):
+        for i, (score, idx) in enumerate(zip(top_results.values, top_results.indices)):
             match_text = descriptions[idx]
             item_code = codes[idx]
             confidence = float(score) * 100
             
-            if confidence < 20: continue # 최저 기준을 조금 더 낮췄습니다.
+            if confidence < 15: continue
             
-            # 레이아웃 분할: 좌측(결과), 우측(확신도)
-            col1, col2 = st.columns([8, 2])
+            # 한 줄에 콤팩트하게 배치
+            c1, c2, c3 = st.columns([1, 7, 2])
+            with c1:
+                st.markdown(f"**{i+1}순위**")
+            with c2:
+                st.markdown(f"`[{item_code}]` **{match_text.split(' > ')[-1]}**")
+                st.caption(f"📍 {match_text}")
+            with c3:
+                # 글자 크기 조절된 확신도 표시
+                st.write(f"**{confidence:.1f}%**")
             
-            with col1:
-                # 1순위, 2순위 표시와 함께 코드/경로 출력
-                st.markdown(f"**{rank}순위** | `[{item_code}]` **{match_text.split(' > ')[-1]}**")
-                st.caption(f"📍 전체 경로: {match_text}")
-            
-            with col2:
-                # 확신도를 우측에 별도로 표시
-                st.metric("확신도", f"{confidence:.1f}%")
-            
-            st.write("---")
-            rank += 1
-
-    if not any(top_results.values > 0.2):
-        st.warning("⚠️ 입력하신 내용과 의미적으로 유사한 카테고리를 찾지 못했습니다.")
+            st.markdown("<hr>", unsafe_allow_html=True)
