@@ -3,14 +3,13 @@ from sentence_transformers import SentenceTransformer, util
 import torch
 import re
 
-# 1. AI 모델 설정 (한국어/영어 혼용에 가장 강력한 모델로 고정)
 @st.cache_resource
 def load_model():
     return SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
 
 model = load_model()
 
-# --- 데이터 (1,836개 데이터를 유지하세요) ---
+# --- 데이터 (1,836개 데이터 유지) ---
 CATEGORY_DATA = {
 "K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
@@ -1850,73 +1849,71 @@ CATEGORY_DATA = {
 "K17100204" : "특수분야 > 용역/비용 > 비용 > 화물택배비",
 }
 
-# --- 화면 레이아웃 설정 (폭 좁게 조정) ---
-st.set_page_config(layout="wide")
+# --- 디자인: 화면 중앙 700px 강제 고정 ---
+st.set_page_config(layout="wide") 
 
 st.markdown("""
     <style>
-    /* 전체 화면 중앙 집중 배치 (폭 750px로 제한) */
+    /* 전체 화면 중앙 정렬 및 너비 강제 제한 */
     .main .block-container {
-        max-width: 750px;
-        padding-top: 2rem;
+        max-width: 700px !important;
+        margin: 0 auto !important;
+        padding-top: 2rem !important;
     }
-    /* 결과 박스 디자인 촘촘하게 */
-    .stMetric { 
-        background-color: #f8f9fa; 
-        padding: 8px !important; 
-        border-radius: 5px; 
-        border: 1px solid #eee; 
-    }
-    [data-testid="stMetricValue"] { font-size: 1.2rem !important; color: #007bff; }
-    hr { margin: 0.6rem 0px !important; }
-    div[data-testid="stCaptionContainer"] { font-size: 0.8rem; color: #888; }
+    .stMetric { background-color: #f8f9fa; padding: 5px !important; border-radius: 5px; }
+    hr { margin: 0.5rem 0px !important; }
+    div[data-testid="stCaptionContainer"] { font-size: 0.85rem; color: #666; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🧠 AI 카테고리 지능형 분석기")
+st.title("🧠 AI 카테고리 분석기")
 
-# 검색창
 query = st.text_input("분석할 품명/규격을 입력하세요", placeholder="예: k2 안전화")
 
 if query:
-    with st.spinner('AI 분석 중...'):
+    with st.spinner('맥락 분석 중...'):
         codes = list(CATEGORY_DATA.keys())
         descriptions = list(CATEGORY_DATA.values())
         
-        # [정확도 향상 로직] 검색어 정제
-        # 영문 브랜드명(K2 등)과 한글 핵심단어를 분리하여 AI가 더 잘 이해하도록 함
+        # 1. AI 분석 (의미 기반)
         clean_query = re.sub(r'[^a-zA-Z0-9가-힣\s]', ' ', query)
-        
         query_embedding = model.encode(clean_query, convert_to_tensor=True)
         category_embeddings = model.encode(descriptions, convert_to_tensor=True)
-        
-        # 유사도 계산
         cosine_scores = util.pytorch_cos_sim(query_embedding, category_embeddings)[0]
-        top_results = torch.topk(cosine_scores, k=5)
         
-        st.write("---") # 분석 결과 글자와 아이콘 삭제하고 구분선만 배치
+        # 2. [필살기] 키워드 가중치 부여 (검색어가 포함되면 점수 보너스)
+        # "안전화"라는 단어가 직접 들어있으면 점수를 강제로 올림
+        final_scores = cosine_scores.clone()
+        query_words = clean_query.split()
+        for i, desc in enumerate(descriptions):
+            for word in query_words:
+                if len(word) > 1 and word in desc: # 2글자 이상 단어가 포함되면
+                    final_scores[i] += 0.2 # 점수 대폭 가산
+        
+        top_results = torch.topk(final_scores, k=5)
+        
+        st.write("---")
         
         found = False
         for i, (score, idx) in enumerate(zip(top_results.values, top_results.indices)):
             confidence = float(score) * 100
-            if confidence < 15: continue
+            if confidence < 10: continue
             
             found = True
             match_text = descriptions[idx]
             item_code = codes[idx]
             
-            # 레이아웃 배치
-            col1, col2, col3 = st.columns([1.2, 6.8, 2])
+            col1, col2, col3 = st.columns([1.5, 6.5, 2])
             with col1:
                 st.markdown(f"**{i+1}순위**")
             with col2:
-                # 소분류와 코드 강조
-                st.markdown(f"`[{item_code}]` **{match_text.split(' > ')[-1]}**")
-                st.caption(f"📍 {match_text}")
+                st.markdown(f"`{item_code}` **{match_text.split(' > ')[-1]}**")
+                st.caption(f"{match_text}")
             with col3:
-                st.metric("", f"{confidence:.1f}%")
-            
+                # 100% 넘지 않게 조정
+                display_conf = min(confidence, 99.9)
+                st.metric("", f"{display_conf:.1f}%")
             st.write("---")
 
         if not found:
-            st.warning("⚠️ 일치하는 카테고리를 찾지 못했습니다.")
+            st.warning("⚠️ 유사한 카테고리를 찾지 못했습니다.")
