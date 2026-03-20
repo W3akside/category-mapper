@@ -1853,7 +1853,7 @@ if query:
     choices = list(CATEGORY_DATA.values())
     
     # [설정] 부분 일치 방식으로 검색 (정확도 UP)
-    results = process.extract(query, choices, limit=5, scorer=fuzz.partial_ratio)
+    results = process.extract(query, choices, limit=5, scorer=fuzz.token_sort_ratio)
     
     st.write("---")
     
