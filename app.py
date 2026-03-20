@@ -4,58 +4,53 @@ import google.generativeai as genai
 import torch
 
 # --- [1] 설정: 제미나이 & 로컬 AI ---
-# 형님 API 키를 여기에 정확히 넣어주세요
 genai.configure(api_key="AIzaSyCVlOoyvOqbmh3FvxiTSCWBFwBTQT1ubmg")
 gemini_model = genai.GenerativeModel('gemini-1.5-flash')
 
 @st.cache_resource
 def load_local_model():
-    # 문맥 이해가 좋고 속도가 빠른 다국어 모델
     return SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
 
 local_model = load_local_model()
 
-# --- [2] 화면 설정: 중앙 정렬 및 폰트 크기 최적화 ---
+# --- [2] 화면 설정: 중앙 정렬 및 가로형 레이아웃 최적화 ---
 st.set_page_config(layout="centered", page_title="지능형 카테고리 분석기")
 
 st.markdown("""
     <style>
-    /* 전체 폭 제한 */
-    .main .block-container { max-width: 750px !important; padding-top: 2rem; }
+    .main .block-container { max-width: 850px !important; padding-top: 2rem; }
     
-    /* 캡처 이미지 배치를 그대로 구현 (Flexbox) */
-    .result-row { 
-        display: flex; 
-        justify-content: space-between; 
-        align-items: center; 
+    /* 가로 한 줄 배치를 위한 컨테이너 */
+    .row-container {
+        display: flex;
+        align-items: baseline;
+        justify-content: flex-start;
+        gap: 20px;
         width: 100%;
-        margin-bottom: 5px;
     }
     
-    /* 1순위, 2순위 글자 크기 */
-    .rank-label { font-size: 1.2rem !important; font-weight: 700; color: #333; }
+    /* 1순위 (글자 크기 1.2배) */
+    .rank-text { font-size: 1.3rem !important; font-weight: 800; min-width: 60px; color: #333; }
     
-    /* [수정 핵심] 신뢰도 점수 크기를 대폭 축소 (제목과 밸런스 맞춤) */
-    .score-label { font-size: 1.6rem !important; font-weight: 800; color: #1E1E1E; text-align: right; }
+    /* 카테고리 코드 (배지 스타일) */
+    .code-text { background-color: #f0f4ff; color: #007bff; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 1rem; min-width: 90px; text-align: center; }
     
-    /* 카테고리 정보 구역 */
-    .info-container { margin-top: 10px; padding-left: 2px; }
+    /* 세부 카테고리 명 (굵게, 1.5배) */
+    .main-name { font-size: 1.5rem !important; font-weight: 800; color: #1E1E1E; flex-grow: 1; }
     
-    /* 코드 배지 + 카테고리 제목 (굵고 크게) */
-    .main-cat-name { font-size: 1.5rem !important; font-weight: 800; color: #1E1E1E; }
-    .cat-code-tag { background-color: #f0f4ff; color: #007bff; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 0.9rem; margin-right: 8px; }
+    /* 정확도 (카테고리 명과 비슷한 크기) */
+    .score-text { font-size: 1.5rem !important; font-weight: 800; color: #444; min-width: 80px; text-align: right; }
     
-    /* 전체 경로 (📍 표시 포함) */
-    .full-path-text { font-size: 1.15rem !important; color: #888; margin-top: 8px; line-height: 1.5; }
+    /* 카테고리 경로 (바로 아래줄 배치) */
+    .path-row { font-size: 1.1rem !important; color: #888; margin-top: 5px; margin-left: 80px; }
     
-    hr { border: 0; border-top: 1px solid #eee; margin: 25px 0; }
+    hr { border: 0; border-top: 1px solid #eee; margin: 15px 0; }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("🚀 지능형 카테고리 분석기")
 
-# --- [3] 데이터 바구니 (1,836개 데이터를 여기에 유지하세요) ---
-# 형식: "코드": "전체 경로", (쉼표 주의!)
+# --- [3] 데이터 바구니 ---
 CATEGORY_DATA = {
 "K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
@@ -1899,7 +1894,6 @@ query = st.text_input("분석할 품명/규격을 입력하세요", placeholder=
 
 if query:
     with st.spinner('AI 분석 중...'):
-        # Step 1: 제미나이 키워드 확장 (형님 아이디어)
         prompt = f"'{query}'와 관련된 산업 자재용 핵심 키워드 5개만 쉼표로 알려줘."
         try:
             response = gemini_model.generate_content(prompt)
@@ -1911,17 +1905,15 @@ if query:
         codes = list(CATEGORY_DATA.keys())
         descriptions = list(CATEGORY_DATA.values())
 
-        # Step 2: 로컬 AI 검색 및 점수 계산
         query_emb = local_model.encode(query + " " + gemini_keywords, convert_to_tensor=True)
         desc_emb = local_model.encode(descriptions, convert_to_tensor=True)
         scores = util.pytorch_cos_sim(query_emb, desc_emb)[0]
 
-        # 단어 가중치 가산 (직접 매칭)
         final_scores = scores.clone()
         for i, desc in enumerate(descriptions):
-            target_name = desc.split(" > ")[-1]
-            if query.replace(" ","") in target_name or target_name in query.replace(" ",""):
-                final_scores[i] += 0.25 # 가산점 부여
+            target = desc.split(" > ")[-1]
+            if query.replace(" ","") in target or target in query.replace(" ",""):
+                final_scores[i] += 0.25
 
         top_results = torch.topk(final_scores, k=5)
         
@@ -1932,15 +1924,14 @@ if query:
             cd = codes[idx]
             name = path.split(' > ')[-1]
             
-            # [핵심 배치] 캡처 화면 레이아웃 그대로 구현
+            # [형님 요청 배치] 가로로 나열
             st.markdown(f'''
-                <div class="result-row">
-                    <div class="rank-label">{i+1}순위</div>
-                    <div class="score-label">{min(conf, 99.9):.1f}%</div>
+                <div class="row-container">
+                    <div class="rank-text">{i+1}순위</div>
+                    <div class="code-text">{cd}</div>
+                    <div class="main-name">{name}</div>
+                    <div class="score-text">{min(conf, 99.9):.1f}%</div>
                 </div>
-                <div class="info-container">
-                    <div class="main-cat-name"><span class="cat-code-tag">{cd}</span> {name}</div>
-                    <div class="full-path-text">📍 {path}</div>
-                </div>
+                <div class="path-row">📍 {path}</div>
             ''', unsafe_allow_html=True)
             st.write("---")
