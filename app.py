@@ -2,19 +2,16 @@ import streamlit as st
 import google.generativeai as genai
 import json
 
-# --- [수정] 1. 제미나이 설정 (AIzaSyCVlOoyvOqbmh3FvxiTSCWBFwBTQT1ubmg) ---
+# --- [1] 제미나이 설정 (복사한 API 키를 여기에 넣으세요) ---
 genai.configure(api_key="AIzaSyCVlOoyvOqbmh3FvxiTSCWBFwBTQT1ubmg")
 model = genai.GenerativeModel('gemini-1.5-flash')
 
-# --- [수정] 2. 화면 중앙 집중형 레이아웃 (폭 좁게!) ---
+# --- [2] 화면 설정: 중앙 정렬 (폭 700px 제한) ---
 st.set_page_config(layout="centered", page_title="Gemini AI 분석기")
 
 st.markdown("""
     <style>
-    .main .block-container {
-        max-width: 650px !important; /* 더 촘촘하게 650px로 제한 */
-        padding-top: 2rem;
-    }
+    .block-container { max-width: 700px !important; padding-top: 2rem; }
     .stMetric { background-color: #f8f9fa; padding: 10px; border-radius: 8px; border: 1px solid #eee; }
     hr { margin: 0.8rem 0px !important; }
     div[data-testid="stCaptionContainer"] { font-size: 0.85rem; color: #666; }
@@ -23,9 +20,9 @@ st.markdown("""
 
 st.title("🚀 Gemini 차세대 AI 분석기")
 
-# --- 3. 데이터 (1,836개 카테고리 리스트) ---
-# 리스트 형태 ["코드: 경로", "코드: 경로", ...] 로 만드시면 됩니다.
-CATEGORY_LIST = [
+# --- [3] 데이터 입력 구간 (여기가 제일 중요합니다!) ---
+# "K01010101: 카테고리명" 이런 형식이면 한 줄에 하나씩 다 들어갑니다.
+raw_data = """
 "K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
 "K01010103" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지플레이트",
@@ -1862,44 +1859,46 @@ CATEGORY_LIST = [
 "K17100202" : "특수분야 > 용역/비용 > 비용 > 입찰수수료",
 "K17100203" : "특수분야 > 용역/비용 > 비용 > 통관료",
 "K17100204" : "특수분야 > 용역/비용 > 비용 > 화물택배비",
-]
-categories_text = "\n".join(CATEGORY_LIST)
+""" 
+# ↑↑↑ 위 예시들을 지우고 1,836개 데이터를 여기에 다 붙여넣으세요 ↑↑↑
 
 query = st.text_input("분석할 품명/규격을 입력하세요", placeholder="예: k2 안전화")
 
 if query:
-    with st.spinner('제미나이가 데이터와 맥락을 심층 분석 중...'):
-        # 제미나이에게 던지는 전문가용 프롬프트
+    with st.spinner('제미나이가 데이터의 맥락을 읽는 중...'):
+        # 제미나이에게 보내는 특급 가이드
         prompt = f"""
-        당신은 산업 자재 분류 전문가입니다. 
-        아래 [카테고리 목록]에서 [입력어]와 의미적으로 가장 잘 맞는 카테고리 3개를 선정하세요.
-        단순히 글자가 겹치는 것보다, 제품의 실제 용도와 맥락을 우선시하세요.
-        
-        [입력어]: {query}
+        당신은 산업 자재 분류 전문가입니다.
+        아래 [카테고리 목록]을 보고 [입력 단어]와 가장 잘 어울리는 카테고리 3개를 선정하세요.
+        브랜드명보다는 제품의 본질적 용도(신발, 강판 등)를 우선하여 판단하세요.
+
+        [입력 단어]: {query}
         [카테고리 목록]:
-        {categories_text}
-        
-        반드시 아래 JSON 형식으로만 답변하세요:
+        {raw_data}
+
+        반드시 아래 JSON 형식으로만 응답하세요:
         [
-          {{"rank": 1, "code": "코드", "path": "전체경로", "reason": "이유(15자내외)"}},
-          {{"rank": 2, "code": "코드", "path": "전체경로", "reason": "이유(15자내외)"}},
-          {{"rank": 3, "code": "코드", "path": "전체경로", "reason": "이유(15자내외)"}}
+          {{"rank": 1, "code": "코드", "path": "전체경로", "reason": "선정 이유(15자 이내)"}},
+          {{"rank": 2, "code": "코드", "path": "전체경로", "reason": "선정 이유(15자 이내)"}},
+          {{"rank": 3, "code": "코드", "path": "전체경로", "reason": "선정 이유(15자 이내)"}}
         ]
         """
         
         try:
             response = model.generate_content(prompt)
-            # JSON 응답 정제
-            clean_res = response.text.replace('```json', '').replace('```', '').strip()
-            results = json.loads(clean_res)
-            
+            # JSON만 추출
+            json_text = response.text.replace('```json', '').replace('```', '').strip()
+            results = json.loads(json_text)
+
             st.write("---")
             for res in results:
-                col1, col2 = st.columns([8, 2])
-                with col1:
+                c1, c2 = st.columns([7.5, 2.5])
+                with c1:
                     st.markdown(f"**{res['rank']}순위** | `[{res['code']}]` **{res['path'].split(' > ')[-1]}**")
                     st.caption(f"📍 {res['path']}")
-                    st.caption(f"💡 {res['reason']}") # 제미나이의 판단 근거
+                    st.caption(f"💡 {res['reason']}")
+                with c2:
+                    st.empty() # 디자인을 위해 우측은 비워둠
                 st.write("---")
-        except:
-            st.error("분석 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.")
+        except Exception as e:
+            st.error("데이터가 너무 많거나 분석 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.")
