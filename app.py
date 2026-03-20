@@ -2,7 +2,7 @@ import streamlit as st
 from fuzzywuzzy import fuzz
 from fuzzywuzzy import process
 
-# --- 여기에 형님의 1,836개 데이터를 넣으세요 ---
+# --- 여기에 1,836개 데이터를 넣으세요 ---
 CATEGORY_DATA = {
 "K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
@@ -1844,7 +1844,7 @@ CATEGORY_DATA = {
 
 # --- 앱 화면 꾸미기 ---
 st.set_page_config(page_title="카테고리 매퍼", layout="centered")
-st.title("🔍 우리회사 카테고리 검색기")
+st.title("🔍 KeP 카테고리 검색기")
 st.info("품명이나 규격을 입력하면 가장 유사한 카테고리를 찾아줍니다.")
 
 query = st.text_input("검색어를 입력하세요 (예: 실납, 고무, 택배)")
