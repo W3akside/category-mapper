@@ -4,7 +4,6 @@ import google.generativeai as genai
 import torch
 
 # --- [1] 설정: 제미나이 & 로컬 AI ---
-# 형님 API 키를 여기에 정확히 넣어주세요
 genai.configure(api_key="AIzaSyCVlOoyvOqbmh3FvxiTSCWBFwBTQT1ubmg")
 gemini_model = genai.GenerativeModel('gemini-1.5-flash')
 
@@ -14,32 +13,43 @@ def load_local_model():
 
 local_model = load_local_model()
 
-# --- [2] 화면 설정: 중앙 정렬 및 글자 크기 최적화 ---
+# --- [2] 화면 설정: 중앙 정렬 및 형님이 좋아하시던 그 디자인 ---
 st.set_page_config(layout="centered", page_title="지능형 카테고리 분석기")
 
 st.markdown("""
     <style>
-    /* 전체 폭 제한 */
     .main .block-container { max-width: 750px !important; padding-top: 2rem; }
     
-    /* 'N순위' 글자 스타일 (요청하신 대로 2.2배 크기) */
-    .rank-text { font-size: 2.2rem !important; font-weight: 800; color: #1E1E1E; margin-bottom: 5px; }
+    /* 형님이 예쁘다고 하신 박스 레이아웃 스타일 */
+    .result-box {
+        background-color: #ffffff;
+        border: 1px solid #f0f0f0;
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 15px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+    }
     
-    /* 카테고리 정보 및 코드 (모든 순위 동일하게 1.5배 수준) */
-    .cat-path { font-size: 1.3rem !important; color: #333; line-height: 1.6; }
-    .cat-code { background-color: #f0f0f0; padding: 2px 8px; border-radius: 4px; font-weight: bold; color: #007bff; }
+    /* 1순위, 2순위 텍스트 */
+    .rank-label { font-size: 1.1rem; font-weight: 700; color: #333; margin-bottom: 8px; }
     
-    /* 정확도 숫자 (순위 글자와 밸런스 맞춤) */
-    .score-val { font-size: 2.1rem !important; font-weight: 800; color: #007bff; text-align: right; }
+    /* 카테고리 제목 (마지막 단어) */
+    .category-title { font-size: 1.5rem; font-weight: 800; color: #1E1E1E; }
     
-    hr { margin: 1.5rem 0px !important; border: 0.5px solid #eee; }
+    /* 카테고리 전체 경로 */
+    .path-text { font-size: 0.95rem; color: #888; margin-top: 5px; }
+    .code-badge { background-color: #e8f0fe; color: #1a73e8; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 0.85rem; }
+    
+    /* [수정 핵심] 정확도 글자 크기를 제목과 밸런스 맞춤 (너무 크지 않게) */
+    .score-text { font-size: 1.8rem; font-weight: 800; color: #444; text-align: right; }
+    
+    hr { border: 0; border-top: 1px solid #eee; margin: 10px 0; }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("🚀 지능형 카테고리 분석기")
 
-# --- [3] 데이터 바구니 (1,836개 데이터를 여기에 유지하세요) ---
-# 형식: "코드": "전체 경로",
+# --- [3] 데이터 바구니 ---
 CATEGORY_DATA = {
 "K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
@@ -1876,15 +1886,15 @@ CATEGORY_DATA = {
 "K17100201" : "특수분야 > 용역/비용 > 비용 > 물류비",
 "K17100202" : "특수분야 > 용역/비용 > 비용 > 입찰수수료",
 "K17100203" : "특수분야 > 용역/비용 > 비용 > 통관료",
-"K17100204" : "특수분야 > 용역/비용 > 비용 > 화물택배비",
+"K17100204" : "특수분야 > 용역/비용 > 비용 > 화물택배비"
 }
 
 query = st.text_input("분석할 품명/규격을 입력하세요", placeholder="예: k2 안전화")
 
 if query:
-    with st.spinner('AI가 최적의 카테고리를 찾는 중...'):
-        # Step 1: 제미나이 키워드 확장 (형님 아이디어)
-        prompt = f"'{query}'와 관련된 산업 자재 키워드 5개만 쉼표로 알려줘. (예: 안전화 -> 신발, 작업화, 발 보호구)"
+    with st.spinner('AI 분석 중...'):
+        # 제미나이 키워드 확장
+        prompt = f"'{query}'와 관련된 산업 자재용 핵심 키워드 5개만 쉼표로 알려줘."
         try:
             response = gemini_model.generate_content(prompt)
             gemini_keywords = response.text.strip()
@@ -1892,40 +1902,10 @@ if query:
         except:
             gemini_keywords = ""
 
-        # Step 2: 로컬 AI 검색 및 점수 계산
         codes = list(CATEGORY_DATA.keys())
         descriptions = list(CATEGORY_DATA.values())
 
+        # 검색 로직
         query_emb = local_model.encode(query + " " + gemini_keywords, convert_to_tensor=True)
         desc_emb = local_model.encode(descriptions, convert_to_tensor=True)
-        scores = util.pytorch_cos_sim(query_emb, desc_emb)[0]
-
-        # 단어 가중치 가산 (안전화 검색 시 안전화 우선 순위)
-        final_scores = scores.clone()
-        clean_query = query.replace(" ", "")
-        for i, desc in enumerate(descriptions):
-            c_name = desc.split(" > ")[-1]
-            if clean_query in c_name or c_name in clean_query:
-                final_scores[i] += 0.25
-
-        top_results = torch.topk(final_scores, k=5)
-        
-        st.write("---")
-        for i, (score, idx) in enumerate(zip(top_results.values, top_results.indices)):
-            conf = float(score) * 100
-            path = descriptions[idx]
-            code = codes[idx]
-            
-            col1, col2 = st.columns([7.5, 2.5])
-            
-            with col1:
-                # 'N순위' 글자 크게
-                st.markdown(f'<div class="rank-text">{i+1}순위</div>', unsafe_allow_html=True)
-                # 코드와 경로 (순위 상관없이 동일 크기)
-                st.markdown(f'<div class="cat-path"><span class="cat-code">{code}</span><br>{path}</div>', unsafe_allow_html=True)
-                
-            with col2:
-                # 정확도 점수 크게
-                st.markdown(f'<div class="score-val">{min(conf, 99.9):.1f}%</div>', unsafe_allow_html=True)
-            
-            st.write("---")
+        scores = util.pytorch_cos_sim(query_emb
