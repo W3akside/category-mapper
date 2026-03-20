@@ -1855,32 +1855,41 @@ st.info("단순 단어 매칭이 아닌, 문맥을 분석하여 가장 적절한
 query = st.text_input("분석할 품명/규격을 입력하세요")
 
 if query:
-    with st.spinner('인공지능이 문맥을 분석 중입니다...'):
-        # 2. 카테고리 목록 준비
+    with st.spinner('인공지능이 맥락을 분석 중입니다...'):
         codes = list(CATEGORY_DATA.keys())
         descriptions = list(CATEGORY_DATA.values())
         
-        # 3. 문장 임베딩 (문장을 숫자로 변환하여 의미 추출)
         query_embedding = model.encode(query, convert_to_tensor=True)
         category_embeddings = model.encode(descriptions, convert_to_tensor=True)
         
-        # 4. 코사인 유사도 계산 (의미가 얼마나 가까운지 측정)
         cosine_scores = util.pytorch_cos_sim(query_embedding, category_embeddings)[0]
-        
-        # 5. 상위 5개 결과 추출
         top_results = torch.topk(cosine_scores, k=5)
         
+        st.write("### 🎯 분석 결과")
         st.write("---")
+        
+        rank = 1
         for score, idx in zip(top_results.values, top_results.indices):
             match_text = descriptions[idx]
             item_code = codes[idx]
             confidence = float(score) * 100
             
-            if confidence < 30: continue # 너무 낮은건 제외
+            if confidence < 20: continue # 최저 기준을 조금 더 낮췄습니다.
             
-            with st.expander(f"[{item_code}] {match_text.split(' > ')[-1]} (AI 확신도: {confidence:.1f}%)"):
-                st.write(f"**분석된 전체 경로:** {match_text}")
-                st.progress(confidence / 100)
+            # 레이아웃 분할: 좌측(결과), 우측(확신도)
+            col1, col2 = st.columns([8, 2])
+            
+            with col1:
+                # 1순위, 2순위 표시와 함께 코드/경로 출력
+                st.markdown(f"**{rank}순위** | `[{item_code}]` **{match_text.split(' > ')[-1]}**")
+                st.caption(f"📍 전체 경로: {match_text}")
+            
+            with col2:
+                # 확신도를 우측에 별도로 표시
+                st.metric("확신도", f"{confidence:.1f}%")
+            
+            st.write("---")
+            rank += 1
 
-    if not any(top_results.values > 0.3):
+    if not any(top_results.values > 0.2):
         st.warning("⚠️ 입력하신 내용과 의미적으로 유사한 카테고리를 찾지 못했습니다.")
