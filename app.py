@@ -1178,7 +1178,7 @@ CATEGORY_DATA = {
 "K09050105" : "운송/포장/저장 > 수직운반기기 > 수직운반기기 > 수직운반기기부분품",
 "K09050106" : "운송/포장/저장 > 수직운반기기 > 수직운반기기 > 기타수직운반기기",
 "K09060101" : "운송/포장/저장 > 플라스틱박스/팔레트 > 팔레트/운반구 > 플라스틱팔레트",
-"K09060102" : "운송/포장/저장 > 플라스틱박스/팔레트 > 팔레트/운반구 > 플락스틱상자",
+"K09060102" : "운송/포장/저장 > 플라스틱박스/팔레트 > 팔레트/운반구 > 플라스틱상자",
 "K09070101" : "운송/포장/저장 > 목재박스/팔레트 > 목재박스/팔레트 > 목재팔레트",
 "K09070102" : "운송/포장/저장 > 목재박스/팔레트 > 목재박스/팔레트 > 목재박스",
 "K09080101" : "운송/포장/저장 > 테이프 > 일반테이프 > 절연테이프",
@@ -1852,19 +1852,29 @@ query = st.text_input("검색어를 입력하세요 (예: 실납, 고무, 택배
 if query:
     choices = list(CATEGORY_DATA.values())
     
-    # [수정포인트 1] scorer를 추가해서 "진짜 그 단어"가 포함된 것 위주로 찾게 바꿨습니다.
-    results = process.extract(query, choices, limit=5, scorer=fuzz.token_set_ratio)
+    # [설정] 부분 일치 방식으로 검색 (정확도 UP)
+    results = process.extract(query, choices, limit=5, scorer=fuzz.partial_ratio)
     
     st.write("---")
+    
+    # 결과를 찾았는지 확인하는 '찾기 버튼' (깃발)
+    found = False 
+    
     for match_text, score in results:
-        # [수정포인트 2] 너무 점수가 낮은(안 닮은) 결과는 아예 안 보여주고 넘어갑니다.
-        if score < 50:
+        if score < 30:  # 30점 미만은 패스
             continue
             
+        found = True  # 하나라도 찾았다면 깃발을 올림!
+        
         # 텍스트로 코드 역추적
         item_code = [k for k, v in CATEGORY_DATA.items() if v == match_text][0]
         
-        # 결과 출력 (검색어와 똑같은 글자가 있으면 강조됩니다)
+        # 결과 출력
         with st.expander(f"[{item_code}] {match_text.split(' > ')[-1]} (일치율: {score}%)"):
             st.write(f"**전체 경로:** {match_text}")
             st.progress(score / 100)
+
+    # [핵심] 만약 끝까지 하나도 못 찾았다면(found가 여전히 False라면)?
+    if not found:
+        st.warning("⚠️ 일치하는 카테고리가 없습니다. 다른 검색어로 시도해 보세요.")
+        st.info("💡 팁: '팔레트' 대신 '파렛트' 혹은 '물류' 등으로 검색해 보세요.")
