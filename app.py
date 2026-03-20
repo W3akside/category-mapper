@@ -4,8 +4,8 @@ import google.generativeai as genai
 import torch
 
 # --- [1] 설정: 제미나이 & 로컬 AI ---
-# API 키를 여기에 꼭 넣어주세요!
-genai.configure(api_key="AIzaSyCVlOoyvOqbmh3FvxiTSCWBFwBTQT1ubmg")
+# 형님 API 키를 여기에 꼭 넣어주세요!
+genai.configure(api_key="AIzaSy...AIzaSyCVlOoyvOqbmh3FvxiTSCWBFwBTQT1ubmg")
 gemini_model = genai.GenerativeModel('gemini-1.5-flash')
 
 @st.cache_resource
@@ -15,7 +15,7 @@ def load_local_model():
 local_model = load_local_model()
 
 # --- [2] 화면 설정: 중앙 정렬 고정 (폭 700px) ---
-st.set_page_config(layout="centered", page_title="카테고리 AI 분석기")
+st.set_page_config(layout="centered", page_title="AI 카테고리 분석기")
 
 st.markdown("""
     <style>
@@ -29,11 +29,12 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🚀 하이브리드 지능형 카테고리 분석기")
+st.title("🚀 지능형 카테고리 분석기")
 
-# --- [3] 데이터 (1,836개) ---
-# CATEGORY_DATA =
-{"K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
+# --- [3] 데이터 넣는 곳 (여기에 1,836개를 다 넣으세요!) ---
+# 주의: 마지막 줄 제외하고 각 줄 끝에 쉼표(,)를 꼭 찍어주셔야 합니다.
+CATEGORY_DATA = {
+"K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
 "K01010103" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지플레이트",
 "K01010104" : "연료/화학 > 고무/수지 > 고무/수지 > 플라스틱",
@@ -1868,24 +1869,22 @@ st.title("🚀 하이브리드 지능형 카테고리 분석기")
 "K17100201" : "특수분야 > 용역/비용 > 비용 > 물류비",
 "K17100202" : "특수분야 > 용역/비용 > 비용 > 입찰수수료",
 "K17100203" : "특수분야 > 용역/비용 > 비용 > 통관료",
-"K17100204" : "특수분야 > 용역/비용 > 비용 > 화물택배비",}
+"K17100204" : "특수분야 > 용역/비용 > 비용 > 화물택배비",
+}
 
 query = st.text_input("분석할 품명/규격을 입력하세요", placeholder="예: k2 안전화")
 
 if query:
+    # (이하 제미나이 키워드 확장 및 로컬 AI 검색 로직은 동일)
     with st.spinner('제미나이가 의미를 확장하는 중...'):
-        # Step 1: 제미나이가 검색어의 의미적 연관 키워드 추출
-        prompt = f"입력된 단어 '{query}'와 연관된 산업 자재 카테고리용 핵심 키워드를 5개만 뽑아줘. 결과는 다른 설명 없이 쉼표로만 구분해줘. (예: 안전화 -> 신발, 작업화, 발 보호구)"
-        
+        prompt = f"입력된 단어 '{query}'와 연관된 산업 자재 카테고리용 핵심 키워드를 5개만 뽑아줘. 결과는 다른 설명 없이 쉼표로만 구분해줘."
         try:
             response = gemini_model.generate_content(prompt)
-            # 원래 검색어 + 제미나이 추천 키워드 합체
             expanded_query = f"{query}, {response.text.strip()}"
             st.caption(f"🔍 AI 연관 검색어 확장: {expanded_query}")
         except:
-            expanded_query = query # 제미나이 오류 시 원래 단어 사용
+            expanded_query = query
 
-        # Step 2: 로컬 AI가 확장된 키워드로 1,836개 중 매칭
         codes = list(CATEGORY_DATA.keys())
         descriptions = list(CATEGORY_DATA.values())
 
@@ -1902,12 +1901,10 @@ if query:
             code = codes[idx]
             
             col1, col2, col3 = st.columns([1.5, 6.5, 2])
-            with col1:
-                st.markdown(f"**{i+1}순위**")
+            with col1: st.markdown(f"**{i+1}순위**")
             with col2:
                 st.markdown(f"`{code}` **{path.split(' > ')[-1]}**")
                 st.caption(f"📍 {path}")
             with col3:
-                # 100% 안 넘게 보정
-                st.metric("", f"{min(confidence, 99.9):.1f}%")
+                st.metric("", f"{min(confidence, 99.9):.1;f}%")
             st.write("---")
