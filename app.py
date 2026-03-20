@@ -4,35 +4,33 @@ import google.generativeai as genai
 import torch
 
 # --- [1] 설정: 제미나이 & 로컬 AI ---
-# 형님 API 키를 여기에 꼭 넣어주세요!
-genai.configure(api_key="AIzaSy...AIzaSyCVlOoyvOqbmh3FvxiTSCWBFwBTQT1ubmg")
+# 형님 API 키를 여기에 넣어주세요
+genai.configure(api_key="AIzaSyCVlOoyvOqbmh3FvxiTSCWBFwBTQT1ubmg")
 gemini_model = genai.GenerativeModel('gemini-1.5-flash')
 
 @st.cache_resource
 def load_local_model():
+    # 한국어 처리에 강한 다국어 모델 사용
     return SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
 
 local_model = load_local_model()
 
-# --- [2] 화면 설정: 중앙 정렬 고정 (폭 700px) ---
-st.set_page_config(layout="centered", page_title="AI 카테고리 분석기")
+# --- [2] 화면 설정: 중앙 정렬 고정 ---
+st.set_page_config(layout="centered", page_title="지능형 카테고리 분석기")
 
 st.markdown("""
     <style>
-    .main .block-container {
-        max-width: 700px !important;
-        padding-top: 2rem;
-    }
-    .stMetric { background-color: #f8f9fa; padding: 5px; border-radius: 5px; border: 1px solid #eee; }
-    hr { margin: 0.5rem 0px !important; }
+    .main .block-container { max-width: 700px !important; padding-top: 2rem; }
+    .stMetric { background-color: #f8f9fa; padding: 10px; border-radius: 8px; border: 1px solid #eee; }
+    hr { margin: 0.8rem 0px !important; }
     div[data-testid="stCaptionContainer"] { font-size: 0.85rem; color: #666; }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("🚀 지능형 카테고리 분석기")
 
-# --- [3] 데이터 넣는 곳 (여기에 1,836개를 다 넣으세요!) ---
-# 주의: 마지막 줄 제외하고 각 줄 끝에 쉼표(,)를 꼭 찍어주셔야 합니다.
+# --- [3] 데이터 바구니 (여기에 1,836개 데이터를 넣으세요) ---
+# 형식: "코드": "전체 경로", (마지막 쉼표 주의!)
 CATEGORY_DATA = {
 "K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
@@ -1875,16 +1873,17 @@ CATEGORY_DATA = {
 query = st.text_input("분석할 품명/규격을 입력하세요", placeholder="예: k2 안전화")
 
 if query:
-    # (이하 제미나이 키워드 확장 및 로컬 AI 검색 로직은 동일)
     with st.spinner('제미나이가 의미를 확장하는 중...'):
-        prompt = f"입력된 단어 '{query}'와 연관된 산업 자재 카테고리용 핵심 키워드를 5개만 뽑아줘. 결과는 다른 설명 없이 쉼표로만 구분해줘."
+        # Step 1: 제미나이 키워드 확장 (핵심 아이디어!)
+        prompt = f"입력어 '{query}'와 관련된 산업 자재 카테고리 키워드 5개만 쉼표로 알려줘. (예: 안전화 -> 신발, 작업화, 발 보호구)"
         try:
             response = gemini_model.generate_content(prompt)
             expanded_query = f"{query}, {response.text.strip()}"
-            st.caption(f"🔍 AI 연관 검색어 확장: {expanded_query}")
+            st.info(f"🔍 AI 분석 연관어: {response.text.strip()}")
         except:
             expanded_query = query
 
+        # Step 2: 로컬 AI 검색
         codes = list(CATEGORY_DATA.keys())
         descriptions = list(CATEGORY_DATA.values())
 
@@ -1901,10 +1900,11 @@ if query:
             code = codes[idx]
             
             col1, col2, col3 = st.columns([1.5, 6.5, 2])
-            with col1: st.markdown(f"**{i+1}순위**")
+            with col1:
+                st.markdown(f"**{i+1}순위**")
             with col2:
                 st.markdown(f"`{code}` **{path.split(' > ')[-1]}**")
                 st.caption(f"📍 {path}")
             with col3:
-                st.metric("", f"{min(confidence, 99.9):.1;f}%")
+                st.metric("", f"{min(confidence, 99.9):.1f}%")
             st.write("---")
