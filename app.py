@@ -4,6 +4,7 @@ import google.generativeai as genai
 import torch
 
 # --- [1] 설정: 제미나이 & 로컬 AI ---
+# 형님 API 키를 여기에 넣어주세요
 genai.configure(api_key="AIzaSyCVlOoyvOqbmh3FvxiTSCWBFwBTQT1ubmg")
 gemini_model = genai.GenerativeModel('gemini-1.5-flash')
 
@@ -13,37 +14,28 @@ def load_local_model():
 
 local_model = load_local_model()
 
-# --- [2] 화면 설정: 중앙 정렬 및 형님이 좋아하시던 그 디자인 ---
+# --- [2] 화면 설정: 중앙 정렬 및 폰트 크기 최적화 ---
 st.set_page_config(layout="centered", page_title="지능형 카테고리 분석기")
 
 st.markdown("""
     <style>
     .main .block-container { max-width: 750px !important; padding-top: 2rem; }
     
-    /* 형님이 예쁘다고 하신 박스 레이아웃 스타일 */
-    .result-box {
-        background-color: #ffffff;
-        border: 1px solid #f0f0f0;
-        border-radius: 12px;
-        padding: 20px;
-        margin-bottom: 15px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.03);
-    }
+    /* 1, 2순위 레이아웃 구성 */
+    .result-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 5px; }
     
-    /* 1순위, 2순위 텍스트 */
-    .rank-label { font-size: 1.1rem; font-weight: 700; color: #333; margin-bottom: 8px; }
+    /* 순위 글자 (시원하게 2.2배 수준) */
+    .rank-label { font-size: 2rem !important; font-weight: 800; color: #333; }
     
-    /* 카테고리 제목 (마지막 단어) */
-    .category-title { font-size: 1.5rem; font-weight: 800; color: #1E1E1E; }
+    /* 정확도 점수 (순위와 밸런스 맞춤) */
+    .score-text { font-size: 2rem !important; font-weight: 800; color: #444; }
     
-    /* 카테고리 전체 경로 */
-    .path-text { font-size: 0.95rem; color: #888; margin-top: 5px; }
-    .code-badge { background-color: #e8f0fe; color: #1a73e8; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 0.85rem; }
+    /* 카테고리 정보 (1.5배 수준) */
+    .cat-info { font-size: 1.3rem !important; color: #333; line-height: 1.6; margin-top: 10px; padding-left: 5px; }
+    .cat-code { background-color: #f1f3f4; color: #1a73e8; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 1.1rem; }
+    .cat-path { color: #888; font-size: 1.1rem; margin-top: 4px; }
     
-    /* [수정 핵심] 정확도 글자 크기를 제목과 밸런스 맞춤 (너무 크지 않게) */
-    .score-text { font-size: 1.8rem; font-weight: 800; color: #444; text-align: right; }
-    
-    hr { border: 0; border-top: 1px solid #eee; margin: 10px 0; }
+    hr { border: 0; border-top: 1px solid #eee; margin: 20px 0; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -1905,38 +1897,36 @@ if query:
         codes = list(CATEGORY_DATA.keys())
         descriptions = list(CATEGORY_DATA.values())
 
-# 검색 로직
+        # 검색 로직
         query_emb = local_model.encode(query + " " + gemini_keywords, convert_to_tensor=True)
         desc_emb = local_model.encode(descriptions, convert_to_tensor=True)
         scores = util.pytorch_cos_sim(query_emb, desc_emb)[0]
 
-        # 직접 매칭 가산점
+        # 직접 매칭 가산점 로직
         final_scores = scores.clone()
         for i, desc in enumerate(descriptions):
-            target = desc.split(" > ")[-1]
-            if query.replace(" ","") in target or target in query.replace(" ",""):
+            target_name = desc.split(" > ")[-1]
+            if query.replace(" ","") in target_name or target_name in query.replace(" ",""):
                 final_scores[i] += 0.25
 
         top_results = torch.topk(final_scores, k=5)
         
+        st.write("---")
         for i, (score, idx) in enumerate(zip(top_results.values, top_results.indices)):
             conf = float(score) * 100
             full_path = descriptions[idx]
             cat_code = codes[idx]
             main_cat = full_path.split(' > ')[-1]
             
-            # 형님이 좋아하시던 그 박스 구성
+            # 형님이 요청하신 캡처 이미지 배치 그대로!
             st.markdown(f'''
-                <div class="result-box">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <div style="flex: 8;">
-                            <div class="rank-label">{i+1}순위</div>
-                            <div class="category-title"><span class="code-badge">{cat_code}</span> {main_cat}</div>
-                            <div class="path-text">📍 {full_path}</div>
-                        </div>
-                        <div style="flex: 2;" class="score-text">
-                            {min(conf, 99.9):.1f}%
-                        </div>
-                    </div>
+                <div class="result-row">
+                    <div class="rank-label">{i+1}순위</div>
+                    <div class="score-text">{min(conf, 99.9):.1f}%</div>
+                </div>
+                <div class="cat-info">
+                    <span class="cat-code">{cat_code}</span> <b>{main_cat}</b>
+                    <div class="cat-path">📍 {full_path}</div>
                 </div>
             ''', unsafe_allow_html=True)
+            st.write("---")
