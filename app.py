@@ -1,16 +1,31 @@
 import streamlit as st
-from sentence_transformers import SentenceTransformer, util
-import torch
-import re
+import google.generativeai as genai
+import json
 
-@st.cache_resource
-def load_model():
-    return SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+# --- [수정] 1. 제미나이 설정 (AIzaSyCVlOoyvOqbmh3FvxiTSCWBFwBTQT1ubmg) ---
+genai.configure(api_key="AIzaSyCVlOoyvOqbmh3FvxiTSCWBFwBTQT1ubmg")
+model = genai.GenerativeModel('gemini-1.5-flash')
 
-model = load_model()
+# --- [수정] 2. 화면 중앙 집중형 레이아웃 (폭 좁게!) ---
+st.set_page_config(layout="centered", page_title="Gemini AI 분석기")
 
-# --- 데이터 (1,836개 데이터 유지) ---
-CATEGORY_DATA = {
+st.markdown("""
+    <style>
+    .main .block-container {
+        max-width: 650px !important; /* 더 촘촘하게 650px로 제한 */
+        padding-top: 2rem;
+    }
+    .stMetric { background-color: #f8f9fa; padding: 10px; border-radius: 8px; border: 1px solid #eee; }
+    hr { margin: 0.8rem 0px !important; }
+    div[data-testid="stCaptionContainer"] { font-size: 0.85rem; color: #666; }
+    </style>
+    """, unsafe_allow_html=True)
+
+st.title("🚀 Gemini 차세대 AI 분석기")
+
+# --- 3. 데이터 (1,836개 카테고리 리스트) ---
+# 리스트 형태 ["코드: 경로", "코드: 경로", ...] 로 만드시면 됩니다.
+CATEGORY_LIST = [
 "K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
 "K01010103" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지플레이트",
@@ -1847,73 +1862,44 @@ CATEGORY_DATA = {
 "K17100202" : "특수분야 > 용역/비용 > 비용 > 입찰수수료",
 "K17100203" : "특수분야 > 용역/비용 > 비용 > 통관료",
 "K17100204" : "특수분야 > 용역/비용 > 비용 > 화물택배비",
-}
-
-# --- 디자인: 화면 중앙 700px 강제 고정 ---
-st.set_page_config(layout="wide") 
-
-st.markdown("""
-    <style>
-    /* 전체 화면 중앙 정렬 및 너비 강제 제한 */
-    .main .block-container {
-        max-width: 700px !important;
-        margin: 0 auto !important;
-        padding-top: 2rem !important;
-    }
-    .stMetric { background-color: #f8f9fa; padding: 5px !important; border-radius: 5px; }
-    hr { margin: 0.5rem 0px !important; }
-    div[data-testid="stCaptionContainer"] { font-size: 0.85rem; color: #666; }
-    </style>
-    """, unsafe_allow_html=True)
-
-st.title("🧠 AI 카테고리 분석기")
+]
+categories_text = "\n".join(CATEGORY_LIST)
 
 query = st.text_input("분석할 품명/규격을 입력하세요", placeholder="예: k2 안전화")
 
 if query:
-    with st.spinner('맥락 분석 중...'):
-        codes = list(CATEGORY_DATA.keys())
-        descriptions = list(CATEGORY_DATA.values())
+    with st.spinner('제미나이가 데이터와 맥락을 심층 분석 중...'):
+        # 제미나이에게 던지는 전문가용 프롬프트
+        prompt = f"""
+        당신은 산업 자재 분류 전문가입니다. 
+        아래 [카테고리 목록]에서 [입력어]와 의미적으로 가장 잘 맞는 카테고리 3개를 선정하세요.
+        단순히 글자가 겹치는 것보다, 제품의 실제 용도와 맥락을 우선시하세요.
         
-        # 1. AI 분석 (의미 기반)
-        clean_query = re.sub(r'[^a-zA-Z0-9가-힣\s]', ' ', query)
-        query_embedding = model.encode(clean_query, convert_to_tensor=True)
-        category_embeddings = model.encode(descriptions, convert_to_tensor=True)
-        cosine_scores = util.pytorch_cos_sim(query_embedding, category_embeddings)[0]
+        [입력어]: {query}
+        [카테고리 목록]:
+        {categories_text}
         
-        # 2. [필살기] 키워드 가중치 부여 (검색어가 포함되면 점수 보너스)
-        # "안전화"라는 단어가 직접 들어있으면 점수를 강제로 올림
-        final_scores = cosine_scores.clone()
-        query_words = clean_query.split()
-        for i, desc in enumerate(descriptions):
-            for word in query_words:
-                if len(word) > 1 and word in desc: # 2글자 이상 단어가 포함되면
-                    final_scores[i] += 0.2 # 점수 대폭 가산
+        반드시 아래 JSON 형식으로만 답변하세요:
+        [
+          {{"rank": 1, "code": "코드", "path": "전체경로", "reason": "이유(15자내외)"}},
+          {{"rank": 2, "code": "코드", "path": "전체경로", "reason": "이유(15자내외)"}},
+          {{"rank": 3, "code": "코드", "path": "전체경로", "reason": "이유(15자내외)"}}
+        ]
+        """
         
-        top_results = torch.topk(final_scores, k=5)
-        
-        st.write("---")
-        
-        found = False
-        for i, (score, idx) in enumerate(zip(top_results.values, top_results.indices)):
-            confidence = float(score) * 100
-            if confidence < 10: continue
+        try:
+            response = model.generate_content(prompt)
+            # JSON 응답 정제
+            clean_res = response.text.replace('```json', '').replace('```', '').strip()
+            results = json.loads(clean_res)
             
-            found = True
-            match_text = descriptions[idx]
-            item_code = codes[idx]
-            
-            col1, col2, col3 = st.columns([1.5, 6.5, 2])
-            with col1:
-                st.markdown(f"**{i+1}순위**")
-            with col2:
-                st.markdown(f"`{item_code}` **{match_text.split(' > ')[-1]}**")
-                st.caption(f"{match_text}")
-            with col3:
-                # 100% 넘지 않게 조정
-                display_conf = min(confidence, 99.9)
-                st.metric("", f"{display_conf:.1f}%")
             st.write("---")
-
-        if not found:
-            st.warning("⚠️ 유사한 카테고리를 찾지 못했습니다.")
+            for res in results:
+                col1, col2 = st.columns([8, 2])
+                with col1:
+                    st.markdown(f"**{res['rank']}순위** | `[{res['code']}]` **{res['path'].split(' > ')[-1]}**")
+                    st.caption(f"📍 {res['path']}")
+                    st.caption(f"💡 {res['reason']}") # 제미나이의 판단 근거
+                st.write("---")
+        except:
+            st.error("분석 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.")
