@@ -4,7 +4,7 @@ import google.generativeai as genai
 import torch
 
 # --- [1] 설정: 제미나이 & 로컬 AI ---
-# 형님 API 키를 여기에 넣어주세요
+# API 키를 여기에 넣어주세요
 genai.configure(api_key="AIzaSyCVlOoyvOqbmh3FvxiTSCWBFwBTQT1ubmg")
 gemini_model = genai.GenerativeModel('gemini-1.5-flash')
 
