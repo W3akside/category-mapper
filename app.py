@@ -2,6 +2,7 @@ import streamlit as st
 from sentence_transformers import SentenceTransformer, util
 import google.generativeai as genai
 import torch
+import re
 
 # --- [1] 설정: 제미나이 & 로컬 AI ---
 genai.configure(api_key="AIzaSyCVlOoyvOqbmh3FvxiTSCWBFwBTQT1ubmg")
@@ -1870,72 +1871,74 @@ CATEGORY_DATA = {
 "K17100204" : "특수분야 > 용역/비용 > 비용 > 화물택배비",
 }
 
-query = st.text_input("분석할 품명/규격을 입력하세요", placeholder="예: 비닐 1000*1500")
+query = st.text_input("분석할 품명/규격을 입력하세요", placeholder="예: (주)세중 전기강판 30PH105*100")
 
 if query:
-    with st.spinner('전문가 시스템이 심층 추론 중...'):
-        # 1단계: 제미나이의 심층 분석 (대화하듯 분석)
+    with st.spinner('품명의 본질을 파악하는 중...'):
+        # 1. 제미나이의 전문가적 추론 (노이즈 제거 및 본질 파악)
         analysis_prompt = f"""
-        당신은 산업 자재 분류 전문가입니다. 다음 품명을 보고 재질, 규격, 용도를 고려하여 '표준 명칭'을 추론하세요.
-        품명: {query}
-        
-        분석 가이드:
-        - 규격(1000*1500mm 등)이 일반적인 용도보다 크거나 작다면 그에 맞는 산업용 명칭을 생각하세요.
-        - 재질과 중의적 표현(CORE 등)을 산업 문맥에서 해석하세요.
-        
-        위 분석을 바탕으로 이 물건을 가장 잘 설명하는 핵심 검색어 3개만 쉼표로 알려주세요.
+        당신은 산업 자재 분류 전문가입니다. 다음 품명을 분석하세요:
+        입력 품명: "{query}"
+
+        작업:
+        1. 업체명(예: (주)세중)과 규격 노이즈를 식별하고 제거하세요.
+        2. 이 물건의 '산업적 본질'이 무엇인지 한 단어로 정의하세요. (예: 전기강판, 비닐시트)
+        3. 이 물건이 절대 속할 수 없는 카테고리 키워드가 있다면 무엇입니까? (예: 전주, 조명, 컴퓨터)
+
+        최종적으로 검색에 사용할 핵심 키워드 3개만 알려주세요.
         """
         try:
             res = gemini_model.generate_content(analysis_prompt)
-            ai_expert_keywords = res.text.strip()
+            expert_keywords = res.text.strip()
         except:
-            ai_expert_keywords = query
+            expert_keywords = query
 
-        # 2단계: 로컬 AI로 후보군 20개 추출
+        # 2. 로컬 AI로 후보군 넓게 추출 (상위 30개)
         codes = list(CATEGORY_DATA.keys())
         descriptions = list(CATEGORY_DATA.values())
         
-        query_emb = local_model.encode(query + " " + ai_expert_keywords, convert_to_tensor=True)
+        query_emb = local_model.encode(query + " " + expert_keywords, convert_to_tensor=True)
         desc_emb = local_model.encode(descriptions, convert_to_tensor=True)
         scores = util.pytorch_cos_sim(query_emb, desc_emb)[0]
         
-        # 상위 20개 후보만 선정
-        top_k_val, top_k_idx = torch.topk(scores, k=min(20, len(descriptions)))
+        top_k_val, top_k_idx = torch.topk(scores, k=min(30, len(descriptions)))
         candidates = [descriptions[i] for i in top_k_idx]
 
-        # 3단계: 제미나이에게 최종 검토 (후보 중 최적 선택)
-        final_prompt = f"""
+        # 3. 제미나이의 최종 검수 (후보군 중 논리적으로 선택)
+        check_prompt = f"""
         입력 품명: {query}
-        전문가 키워드: {ai_expert_keywords}
-        
-        아래 후보 카테고리 리스트 중 입력 품명에 가장 적합한 5개를 순서대로 골라주세요.
-        리스트: {candidates}
-        
-        반환 형식: 카테고리명1, 카테고리명2, ... (딱 5개만 이름만 쓰세요)
+        품명 분석 결과: {expert_keywords}
+
+        아래 후보 카테고리 중, '산업적 맥락'에서 가장 정확한 5개를 순서대로 골라주세요.
+        업체명이나 규격 숫자에 낚이지 말고, 물건의 본질(재질/용도)에 집중하세요.
+        후보: {candidates}
+
+        형식: 카테고리명1, 카테고리명2, ... (딱 5개만 이름만 쓰세요)
         """
         try:
-            final_res = gemini_model.generate_content(final_prompt)
-            best_names = [name.strip() for name in final_res.text.split(',')]
+            final_res = gemini_model.generate_content(check_prompt)
+            best_results = [name.strip() for name in final_res.text.split(',')]
         except:
-            best_names = candidates[:5]
+            best_results = candidates[:5]
 
-        # 4단계: 화면 출력 (매칭되는 데이터 찾아서 출력)
+        # 4. 화면 출력 (디자인 고정)
         st.write("---")
         display_count = 0
-        for b_name in best_names:
+        for b_name in best_results:
             if display_count >= 5: break
+            # 후보군 이름이 카테고리 경로에 포함되어 있는지 확인
             for cd, path in CATEGORY_DATA.items():
                 if b_name in path:
-                    # 점수 재계산 (표시용)
-                    current_score = util.pytorch_cos_sim(local_model.encode(query), local_model.encode(path)).item() * 100
                     name_only = path.split(' > ')[-1]
+                    # 표시용 점수 (추론을 거쳤으므로 보정 점수 부여)
+                    display_score = util.pytorch_cos_sim(local_model.encode(query), local_model.encode(path)).item() * 100
                     
                     st.markdown(f'''
                         <div class="row-container">
                             <div class="rank-text">{display_count+1}순위</div>
                             <div class="code-text">{cd}</div>
                             <div class="main-name">{name_only}</div>
-                            <div class="score-text">{min(current_score + 10, 99.9):.1f}%</div>
+                            <div class="score-text">{min(display_score + 15, 99.9):.1f}%</div>
                         </div>
                         <div class="path-row">📍 {path}</div>
                     ''', unsafe_allow_html=True)
