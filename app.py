@@ -1,8 +1,15 @@
 import streamlit as st
-from fuzzywuzzy import fuzz
-from fuzzywuzzy import process
+from sentence_transformers import SentenceTransformer, util
+import torch
 
-# --- 여기에 1,836개 데이터를 넣으세요 ---
+# 1. 인공지능 모델 불러오기 (한국어와 영어를 동시에 이해하는 모델)
+@st.cache_resource
+def load_model():
+    return SentenceTransformer('snunlp/KR-SBERT-V40K-klueNLI-augSTS')
+
+model = load_model()
+
+# --- 데이터 (여기에 1,836개 데이터를 넣으세요) ---
 CATEGORY_DATA = {
 "K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
@@ -1178,7 +1185,7 @@ CATEGORY_DATA = {
 "K09050105" : "운송/포장/저장 > 수직운반기기 > 수직운반기기 > 수직운반기기부분품",
 "K09050106" : "운송/포장/저장 > 수직운반기기 > 수직운반기기 > 기타수직운반기기",
 "K09060101" : "운송/포장/저장 > 플라스틱박스/팔레트 > 팔레트/운반구 > 플라스틱팔레트",
-"K09060102" : "운송/포장/저장 > 플라스틱박스/팔레트 > 팔레트/운반구 > 플라스틱상자",
+"K09060102" : "운송/포장/저장 > 플라스틱박스/팔레트 > 팔레트/운반구 > 플락스틱상자",
 "K09070101" : "운송/포장/저장 > 목재박스/팔레트 > 목재박스/팔레트 > 목재팔레트",
 "K09070102" : "운송/포장/저장 > 목재박스/팔레트 > 목재박스/팔레트 > 목재박스",
 "K09080101" : "운송/포장/저장 > 테이프 > 일반테이프 > 절연테이프",
@@ -1842,39 +1849,38 @@ CATEGORY_DATA = {
 "K17100204" : "특수분야 > 용역/비용 > 비용 > 화물택배비",
 }
 
-# --- 앱 화면 꾸미기 ---
-st.set_page_config(page_title="카테고리 매퍼", layout="centered")
-st.title("🔍 KeP 카테고리 검색기")
-st.info("품명이나 규격을 입력하면 가장 유사한 카테고리를 찾아줍니다.")
+st.title("🧠 AI 카테고리 지능형 분석기")
+st.info("단순 단어 매칭이 아닌, 문맥을 분석하여 가장 적절한 카테고리를 추천합니다.")
 
-query = st.text_input("검색어를 입력하세요 (예: 실납, 고무, 택배)")
+query = st.text_input("분석할 품명/규격을 입력하세요")
 
 if query:
-    choices = list(CATEGORY_DATA.values())
-    
-    # [설정] 부분 일치 방식으로 검색 (정확도 UP)
-    results = process.extract(query, choices, limit=5, scorer=fuzz.token_sort_ratio)
-    
-    st.write("---")
-    
-    # 결과를 찾았는지 확인하는 '찾기 버튼' (깃발)
-    found = False 
-    
-    for match_text, score in results:
-        if score < 30:  # 30점 미만은 패스
-            continue
+    with st.spinner('인공지능이 문맥을 분석 중입니다...'):
+        # 2. 카테고리 목록 준비
+        codes = list(CATEGORY_DATA.keys())
+        descriptions = list(CATEGORY_DATA.values())
+        
+        # 3. 문장 임베딩 (문장을 숫자로 변환하여 의미 추출)
+        query_embedding = model.encode(query, convert_to_tensor=True)
+        category_embeddings = model.encode(descriptions, convert_to_tensor=True)
+        
+        # 4. 코사인 유사도 계산 (의미가 얼마나 가까운지 측정)
+        cosine_scores = util.pytorch_cos_sim(query_embedding, category_embeddings)[0]
+        
+        # 5. 상위 5개 결과 추출
+        top_results = torch.topk(cosine_scores, k=5)
+        
+        st.write("---")
+        for score, idx in zip(top_results.values, top_results.indices):
+            match_text = descriptions[idx]
+            item_code = codes[idx]
+            confidence = float(score) * 100
             
-        found = True  # 하나라도 찾았다면 깃발을 올림!
-        
-        # 텍스트로 코드 역추적
-        item_code = [k for k, v in CATEGORY_DATA.items() if v == match_text][0]
-        
-        # 결과 출력
-        with st.expander(f"[{item_code}] {match_text.split(' > ')[-1]} (일치율: {score}%)"):
-            st.write(f"**전체 경로:** {match_text}")
-            st.progress(score / 100)
+            if confidence < 30: continue # 너무 낮은건 제외
+            
+            with st.expander(f"[{item_code}] {match_text.split(' > ')[-1]} (AI 확신도: {confidence:.1f}%)"):
+                st.write(f"**분석된 전체 경로:** {match_text}")
+                st.progress(confidence / 100)
 
-    # [핵심] 만약 끝까지 하나도 못 찾았다면(found가 여전히 False라면)?
-    if not found:
-        st.warning("⚠️ 일치하는 카테고리가 없습니다. 다른 검색어로 시도해 보세요.")
-        st.info("💡 팁: '팔레트' 대신 '파렛트' 혹은 '물류' 등으로 검색해 보세요.")
+    if not any(top_results.values > 0.3):
+        st.warning("⚠️ 입력하신 내용과 의미적으로 유사한 카테고리를 찾지 못했습니다.")
