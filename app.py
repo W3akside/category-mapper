@@ -3,8 +3,8 @@ from sentence_transformers import SentenceTransformer, util
 import google.generativeai as genai
 import torch
 
-# --- [1] 설정 ---
-genai.configure(api_key="AIzaSyCVlOoyvOqbmh3FvxiTSCWBFwBTQT1ubmg")
+# --- [1] 설정 (형님의 API 키를 꼭 확인하세요) ---
+genai.configure(api_key="AIzaSyCVlOoyvOqbmh3FvxiTSCWBFwBTQT1ubmg") 
 gemini_model = genai.GenerativeModel('gemini-1.5-flash')
 
 @st.cache_resource
@@ -22,16 +22,17 @@ st.markdown("""
     .rank-text { font-size: 1.2rem !important; font-weight: 700; min-width: 60px; color: #555; }
     .code-text { background-color: #f0f4ff; color: #007bff; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-size: 0.95rem; min-width: 90px; text-align: center; }
     .main-name { font-size: 1.5rem !important; font-weight: 800; color: #1E1E1E; flex-grow: 1; }
-    .score-text { font-size: 1.1rem !important; font-weight: 600; color: #999; min-width: 100px; text-align: right; }
+    .score-text { font-size: 1.1rem !important; font-weight: 600; color: #999; min-width: 120px; text-align: right; }
     .path-row { font-size: 1.05rem !important; color: #888; margin-top: 4px; margin-left: 75px; }
-    .ai-keyword-box { background-color: #f9f9f9; padding: 12px; border-radius: 8px; margin-bottom: 20px; border-left: 5px solid #007bff; }
+    .ai-keyword-box { background-color: #f9f9f9; padding: 12px; border-radius: 8px; margin-bottom: 20px; border-left: 5px solid #007bff; font-size: 1rem; }
     hr { border: 0; border-top: 1px solid #eee; margin: 15px 0; }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("🚀 지능형 카테고리 분석기")
 
-# --- [3] 데이터 바구니 (1,836개) ---
+# --- [3] 데이터 (형님의 1,836개 데이터가 들어갈 자리) ---
+# 예시 데이터입니다. 실제 데이터로 채워주세요.
 CATEGORY_DATA = {
 "K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
@@ -1871,57 +1872,57 @@ CATEGORY_DATA = {
 "K17100204" : "특수분야 > 용역/비용 > 비용 > 화물택배비",
 }
 
-query = st.text_input("분석할 품명/규격을 입력하세요", placeholder="예: 비닐 1000*1500")
+query = st.text_input("분석할 품명/규격을 입력하세요")
 
 if query:
     with st.spinner('정밀 분석 중...'):
-        # 1. 제미나이: 정예 키워드 5개 추출
-        prompt = f"""
-        입력 품명: '{query}'
-        이 품명과 가장 연관 깊은 산업용 '세부 카테고리' 명칭을 딱 5개만 엄선해서 쉼표로 나열해줘.
-        단어 선정 시 규격과 재질의 맥락을 대화할 때처럼 정확하게 고려해.
-        """
+        # 1. 제미나이가 정예 키워드 5개 선정
+        prompt = f"'{query}' 품명을 보고, 우리 카테고리 리스트에 있을 법한 연관 세부 카테고리 명칭 5개를 쉼표로만 나열해줘. (예: 전기강판, 커플링, 베어링 등)"
         try:
             res = gemini_model.generate_content(prompt)
-            # 2글자 이상인 단어만 필터링
+            # 2글자 이상인 단어만 키워드로 인정
             ai_keywords = [k.strip() for k in res.text.split(',') if len(k.strip()) >= 2][:5]
+            
+            # [수정] 검색창 바로 하단에 나열
             st.markdown(f"""<div class="ai-keyword-box"><b>🔍 제미나이 선정 핵심 키워드:</b> {' | '.join(ai_keywords)}</div>""", unsafe_allow_html=True)
-        except:
+        except Exception as e:
+            st.error(f"AI 키워드 추출 실패: {e}")
             ai_keywords = []
 
         results = []
         seen_codes = set()
 
-        def add_result(code, path, rank_label):
+        def add_result(code, path, label):
             if code not in seen_codes and len(results) < 5:
-                results.append((code, path, rank_label))
+                results.append((code, path, label))
                 seen_codes.add(code)
 
-        # 2~6. 형님의 텍스트 매칭 룰 실행
+        # 2~6. 6단계 필터링 로직 실행
         codes = list(CATEGORY_DATA.keys())
         paths = list(CATEGORY_DATA.values())
 
         for kw in ai_keywords:
+            if len(results) >= 5: break
             kw_split = [w for w in kw.split() if len(w) >= 2]
+            
             for cd, path in CATEGORY_DATA.items():
-                detail_cat = path.split(' > ')[-1]
+                detail_cat = path.split(' > ')[-1] # 세부 카테고리 명칭
                 
                 if kw == detail_cat: add_result(cd, path, "100% 일치")
                 elif kw in detail_cat: add_result(cd, path, "단어 포함")
                 elif len(kw_split) >= 2 and all(s in detail_cat for s in kw_split): add_result(cd, path, "전체 매칭")
                 elif len(kw_split) >= 2 and any(s in detail_cat for s in kw_split): add_result(cd, path, "부분 매칭")
 
-        # [보험] 결과가 5개 미만일 때만 AI 유사도로 채우기
+        # 보험: 결과가 5개 미만이면 AI 유사도로 채움
         if len(results) < 5:
             query_emb = local_model.encode(query, convert_to_tensor=True)
             desc_emb = local_model.encode(paths, convert_to_tensor=True)
             scores = util.pytorch_cos_sim(query_emb, desc_emb)[0]
-            top_val, top_idx = torch.topk(scores, k=10) # 넉넉히 후보 추출
-            
+            top_val, top_idx = torch.topk(scores, k=min(10, len(paths)))
             for idx in top_idx:
                 add_result(codes[idx], paths[idx], "AI 유사도")
 
-        # 결과 출력
+        # 최종 출력
         st.write("---")
         for i, (cd, path, label) in enumerate(results):
             name_only = path.split(' > ')[-1]
