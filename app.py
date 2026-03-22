@@ -5,7 +5,7 @@ import torch
 
 # --- [1] 설정 (형님의 API 키를 꼭 확인하세요) ---
 genai.configure(api_key="AIzaSyCVlOoyvOqbmh3FvxiTSCWBFwBTQT1ubmg") 
-gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+gemini_model = genai.GenerativeModel('models/gemini-1.5-flash')
 
 @st.cache_resource
 def load_local_model():
