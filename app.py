@@ -2,7 +2,7 @@ import streamlit as st
 import google.generativeai as genai
 
 # --- [1] API 설정 (형님 코드 그대로 유지) ---
-API_KEY = st.secrets["AIzaSyDnRcEZx5aL1BvgHF-3i982HS01jXNUSm8"] # 보안을 위해 secrets 권장
+API_KEY = "AIzaSyDnRCEZx5aL1BvgHF-3i982HS01jXNUSm8"
 genai.configure(api_key=API_KEY)
 
 @st.cache_resource
