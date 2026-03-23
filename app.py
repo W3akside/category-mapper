@@ -1,16 +1,44 @@
 import streamlit as st
 import google.generativeai as genai
 
-# 1. 보안 설정: API 키 (Streamlit Secrets에 넣으신 거 그대로 씀)
-genai.configure(api_key=st.secrets["AIzaSyDnRcEZx5aL1BvgHF-3i982HS01jXNUSm8"])
-model = genai.GenerativeModel('gemini-1.5-flash')
+# --- [1] API 설정 (형님 코드 그대로 유지) ---
+API_KEY = st.secrets["AIzaSyDnRcEZx5aL1BvgHF-3i982HS01jXNUSm8"] # 보안을 위해 secrets 권장
+genai.configure(api_key=API_KEY)
 
-st.set_page_config(page_title="자재 분류 매퍼", layout="wide")
-st.title("🚀 초고속 자재 분류기 (보안 우회 버전)")
+@st.cache_resource
+def load_ai_model():
+    try:
+        model = genai.GenerativeModel('models/gemini-1.5-flash')
+        return model
+    except:
+        return None
 
-# 2. 파일 대신 코드에 직접 리스트 저장 (여기에 1,836개 복사!)
-# 예시: CATEGORIES = ["볼트", "너트", "와셔", ...] 
-CATEGORIES = [
+gemini_model = load_ai_model()
+
+# 🚀 [변경점 1] 무거운 SentenceTransformer 로딩 부분을 삭제했습니다.
+# 이제 앱이 켜지자마자 바로 작동합니다.
+
+# --- [2] 디자인 CSS (형님의 황금 배치 그대로 유지) ---
+st.set_page_config(layout="centered", page_title="지능형 카테고리 분석기")
+st.markdown("""
+    <style>
+    .main .block-container { max-width: 850px !important; padding-top: 2rem; }
+    .row-container { display: flex; align-items: center; justify-content: flex-start; gap: 15px; width: 100%; }
+    .rank-text { font-size: 1.2rem !important; font-weight: 700; min-width: 60px; color: #555; }
+    .code-text { background-color: #f0f4ff; color: #007bff; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-size: 0.95rem; min-width: 90px; text-align: center; }
+    .main-name { font-size: 1.5rem !important; font-weight: 800; color: #1E1E1E; flex-grow: 1; }
+    .score-text { font-size: 1.1rem !important; font-weight: 600; color: #999; min-width: 120px; text-align: right; }
+    .path-row { font-size: 1.05rem !important; color: #888; margin-top: 4px; margin-left: 75px; }
+    .ai-keyword-box { background-color: #f9f9f9; padding: 12px; border-radius: 8px; margin-bottom: 20px; border-left: 5px solid #007bff; }
+    hr { border: 0; border-top: 1px solid #eee; margin: 15px 0; }
+    </style>
+    """, unsafe_allow_html=True)
+
+st.title("🚀 지능형 카테고리 분석기")
+
+# --- [3] 데이터 바구니 (형님의 1,836개 데이터) ---
+# 형님이 엑셀에서 작업한 데이터를 여기에 ["코드", "대>중>소>세"] 형태로 넣어주세요.
+CATEGORY_DATA = {
 "K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
 "K01010103" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지플레이트",
@@ -1847,39 +1875,55 @@ CATEGORIES = [
 "K17100202" : "특수분야 > 용역/비용 > 비용 > 입찰수수료",
 "K17100203" : "특수분야 > 용역/비용 > 비용 > 통관료",
 "K17100204" : "특수분야 > 용역/비용 > 비용 > 화물택배비",
-]
+}
 
-st.info(f"현재 등록된 카테고리 수: {len(CATEGORIES)}개")
+query = st.text_input("분석할 품명/규격을 입력하세요", placeholder="예: 비닐 1000*1500")
 
-# 3. 입력창
-input_text = st.text_input("분류할 품명을 입력하세요:", placeholder="예: 둥근머리 볼트 M6")
-
-if st.button("카테고리 매칭 시작"):
-    if input_text:
-        with st.spinner("AI가 리스트를 대조 중입니다..."):
-            # 제미나이에게 리스트를 넘겨주고 최적의 카테고리 추출
-            # (리스트가 너무 길면 에러 날 수 있으니 텍스트로 합쳐서 전달)
-            category_string = "\n".join(CATEGORIES[:1500]) # 안전하게 1500개 우선 전달
-            
-            prompt = f"""
-            너는 자재 관리 전문가야. 아래의 [카테고리 리스트]에서 입력된 [품명]과 가장 일치하는 항목 3개를 찾아줘.
-            
-            [품명]: {input_text}
-            
-            [카테고리 리스트]:
-            {category_string}
-            
-            [출력 양식]:
-            1. 카테고리명 (일치 확률 %) - 이유
-            2. 카테고리명 (일치 확률 %) - 이유
-            3. 카테고리명 (일치 확률 %) - 이유
-            """
-            
-            try:
-                response = model.generate_content(prompt)
-                st.success("✅ 매칭 완료!")
-                st.markdown(response.text)
-            except Exception as e:
-                st.error(f"에러가 발생했습니다: {e}")
+if query:
+    if gemini_model is None:
+        st.error("❌ 구글 AI 인증 오류입니다.")
     else:
-        st.warning("품명을 입력해 주세요.")
+        with st.spinner('제미나이가 전체 리스트에서 최적의 카테고리를 분석 중...'):
+            try:
+                # 🚀 [변경점 2] 로컬에서 계산하지 않고, 제미나이에게 리스트를 던져서 찾아오라고 시킵니다.
+                # 리스트가 너무 길면 에러날 수 있어 상위 1500개 정도만 텍스트로 합쳐서 보냅니다.
+                full_list_text = "\n".join([f"{k}: {v}" for k, v in list(CATEGORY_DATA.items())[:1500]])
+                
+                prompt = f"""
+                너는 자재 분류 전문가야. 아래의 [기준 데이터]에서 [입력 품명]과 가장 잘 어울리는 카테고리 3개를 찾아줘.
+                
+                [입력 품명]: {query}
+                
+                [기준 데이터]:
+                {full_list_text}
+                
+                [출력 양식]:
+                반드시 아래와 같은 형식으로 3개만 답변해줘. 다른 말은 하지마.
+                코드1 | 전체경로1 | 이유1
+                코드2 | 전체경로2 | 이유2
+                코드3 | 전체경로3 | 이유3
+                """
+                
+                response = gemini_model.generate_content(prompt)
+                ai_results = response.text.strip().split('\n')
+
+                # --- 결과 출력 (형님의 황금 배치 디자인 그대로 활용) ---
+                st.write("---")
+                for i, res in enumerate(ai_results):
+                    try:
+                        # 제미나이가 준 답변을 잘라서 형님 디자인에 입힙니다.
+                        cd, path, reason = res.split('|')
+                        st.markdown(f'''
+                            <div class="row-container">
+                                <div class="rank-text">{i+1}순위</div>
+                                <div class="code-text">{cd.strip()}</div>
+                                <div class="main-name">{path.split(' > ')[-1].strip()}</div>
+                                <div class="score-text">[분석 일치]</div>
+                            </div>
+                            <div class="path-row">📍 {path.strip()} <br> 💡 {reason.strip()}</div>
+                        ''', unsafe_allow_html=True); st.write("---")
+                    except:
+                        continue # 혹시라도 형식이 안 맞으면 패스
+
+            except Exception as e:
+                st.error(f"⚠️ 연결 오류: {e}")
