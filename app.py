@@ -1,9 +1,8 @@
 import streamlit as st
 import google.generativeai as genai
 
-# --- [1] API 설정 ---
-# 형님, 여기 따옴표 안에 아까 그 새 키만 정확히 복사해 넣으세요!
-API_KEY = "AIzaSyBNXY2bOC7Y5Z1k76wsdZpJu6l0nf1WqCc" 
+# [1] 키는 아까 그 새 키 그대로 쓰세요!
+API_KEY = "AIzaSyBNXY2bOC7Y5Z1k76wsdZpJu6l0nf1WqCc"
 genai.configure(api_key=API_KEY)
 
 # --- [2] 디자인 ---
@@ -1853,26 +1852,13 @@ CATEGORY_DATA = {
 query = st.text_input("분석할 품명/규격을 입력하세요 (예: 안전화 k2)")
 
 if query:
-    with st.spinner('제미나이가 분석 중...'):
-        try:
-            # 1.5 Flash 모델 호출 (가장 확실한 명칭)
-            model = genai.GenerativeModel('gemini-1.5-flash')
-            
-            # 데이터가 너무 많으면 구글이 거절하니까 500개만 먼저 테스트
-            items = list(CATEGORY_DATA.items())[:500]
-            list_text = "\n".join([f"{c}: {p}" for c, p in items])
-            
-            prompt = f"'{query}'와 가장 유사한 카테고리 3개를 리스트에서 골라줘. '코드 | 전체경로 | 이유' 형식으로 답변해.\n\n[리스트]\n{list_text}"
-            
-            # 실제 호출
-            response = model.generate_content(prompt)
-            
-            # 결과 출력
-            st.success("분석이 완료되었습니다!")
-            st.markdown("### 🔍 분석 결과")
-            st.write(response.text)
-            
-        except Exception as e:
-            # 여기서 나오는 영어 메시지가 진짜 범인입니다.
-            st.error(f"구글 서버 연결 에러: {e}")
-            st.warning("팁: 키를 새로 만든 지 10분이 안 지났다면 조금만 더 기다려 보세요.")
+    try:
+        # 'models/' 같은 복잡한 주소 다 빼고 딱 이름만 부릅니다.
+        # 이렇게 부르면 구형 버전 도구에서도 알아들을 확률이 높습니다.
+        model = genai.GenerativeModel('gemini-pro') 
+        
+        response = model.generate_content(f"{query} 카테고리 분석해줘")
+        st.write(response.text)
+        
+    except Exception as e:
+        st.error(f"에러 메시지: {e}")
