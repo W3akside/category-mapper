@@ -1866,7 +1866,7 @@ query = st.text_input("검색할 품명 또는 규격을 입력하세요", place
 
 if query:
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash') # 속도가 빠른 flash 모델 권장
+        model = genai.GenerativeModel('gemini-2.0-flash')
         
         # --- [Step 2] 연관어 도출 ---
         with st.spinner('1. 연관 카테고리 분석 중...'):
