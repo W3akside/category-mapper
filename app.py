@@ -1,18 +1,24 @@
 import streamlit as st
 import google.generativeai as genai
 
-# --- [1] API 설정 (형님, 키 복사할 때 앞뒤 공백 없는지 꼭 확인하세요!) ---
-API_KEY = "AIzaSyDnRcEZx5aL1BvgHF-3i982HS01jXNUSm8" # ← 여기에 따옴표 안에 키만 정확히 넣으세요
+# --- [1] API 설정 (형님, 새로 만든 키를 여기에 넣으세요!) ---
+API_KEY = "AIzaSyDnRcEZx5aL1BvgHF-3i982HS01jXNUSm8" 
 genai.configure(api_key=API_KEY)
 
 @st.cache_resource
 def load_ai_model():
-    # 404 에러 방지를 위해 가장 잘 먹히는 이름 순서대로 시도합니다.
-    for model_name in ['gemini-1.5-flash', 'models/gemini-1.5-flash', 'gemini-pro']:
+    # 무료 등급에서 가장 잘 먹히는 이름들을 순서대로 다 찔러봅니다.
+    possible_names = [
+        'models/gemini-1.5-flash',
+        'gemini-1.5-flash',
+        'models/gemini-1.5-flash-latest',
+        'gemini-pro'
+    ]
+    for name in possible_names:
         try:
-            model = genai.GenerativeModel(model_name)
-            # 연결 테스트
-            model.generate_content("test", generation_config={"max_output_tokens": 1})
+            model = genai.GenerativeModel(model_name=name)
+            # 실제로 대답을 하는지 1글자 테스트 (이게 통과해야 진짜 연결된 것임)
+            model.generate_content("hi", generation_config={"max_output_tokens": 1})
             return model
         except:
             continue
@@ -20,7 +26,7 @@ def load_ai_model():
 
 gemini_model = load_ai_model()
 
-# --- [2] 디자인 CSS (형님의 황금 배치 그대로 유지) ---
+# --- [2] 디자인 CSS (형님의 황금 배치 100% 유지) ---
 st.set_page_config(layout="centered", page_title="지능형 카테고리 분석기")
 st.markdown("""
     <style>
@@ -38,7 +44,8 @@ st.markdown("""
 
 st.title("🚀 지능형 카테고리 분석기")
 
-# --- [3] 데이터 바구니 (1,836개 데이터) ---
+# --- [3] 데이터 바구니 (형님의 1,836개 데이터) ---
+# 엑셀에서 작업한 데이터를 여기에 ["코드": "대 > 중 > 소 > 세"] 형태로 넣으세요.
 CATEGORY_DATA = {
 "K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
@@ -1878,55 +1885,49 @@ CATEGORY_DATA = {
 "K17100204" : "특수분야 > 용역/비용 > 비용 > 화물택배비",
 }
 
-query = st.text_input("분석할 품명/규격을 입력하세요", placeholder="예: 비닐 1000*1500")
+query = st.text_input("분석할 품명/규격을 입력하세요", placeholder="예: 안전화 K2-46")
 
 if query:
     if gemini_model is None:
-        st.error("❌ 구글 AI 모델을 찾을 수 없거나 인증 오류입니다. API 키와 모델명을 다시 확인해야 합니다.")
+        st.error("❌ 구글 AI 모델 연결 실패! API 키를 확인하거나 잠시 후 다시 시도해주세요.")
     else:
-        with st.spinner('제미나이가 정밀 분석 중...'):
+        with st.spinner('제미나이가 카테고리를 정밀 매칭 중...'):
             try:
-                # 1단계: 키워드 추출
-                response = gemini_model.generate_content(f"'{query}'와 연관된 한국어 산업용 세부 카테고리 단어 5개를 쉼표로만 나열해줘.")
-                ai_keywords = [k.strip() for k in response.text.split(',') if len(k.strip()) >= 2][:5]
+                # 데이터 1000개만 샘플로 추출 (토큰 제한 방지)
+                list_sample = "\n".join([f"{c}: {p}" for c, p in list(CATEGORY_DATA.items())[:1200]])
                 
-                if ai_keywords:
-                    st.markdown(f"""<div class="ai-keyword-box"><b>🔍 제미나이 선정 핵심 키워드:</b> {' | '.join(ai_keywords)}</div>""", unsafe_allow_html=True)
+                prompt = f"""
+                입력품명: {query}
+                너는 자재 관리 전문가야. 아래 [리스트]에서 입력품명과 가장 잘 어울리는 카테고리 3개를 골라줘.
+                결과는 반드시 '코드 | 전체경로 | 이유' 형식으로 출력해줘.
                 
-                results = []
-                seen_codes = set()
-                def add_res(c, p, l):
-                    if c not in seen_codes and len(results) < 5:
-                        results.append((c, p, l)); seen_codes.add(c)
-
-                # 2단계: 키워드 기반 단순 매칭
-                for kw in ai_keywords:
-                    for cd, path in CATEGORY_DATA.items():
-                        if kw in path.split(' > ')[-1]: add_res(cd, path, "키워드 매칭")
-
-                # 3단계: 전체 리스트 대조 (보험용)
-                if len(results) < 5:
-                    full_list_text = "\n".join([f"{c}: {p}" for c, p in list(CATEGORY_DATA.items())[:1000]]) # 토큰 제한 고려
-                    prompt = f"품명: {query}\n위 품명과 가장 유사한 카테고리 3개를 리스트에서 골라줘.\n형식: 코드 | 전체경로 | 이유\n\n리스트:\n{full_list_text}"
-                    ai_res = gemini_model.generate_content(prompt)
-                    for line in ai_res.text.strip().split('\n'):
-                        if '|' in line:
-                            parts = line.split('|')
-                            if len(parts) >= 2:
-                                add_res(parts[0].strip(), parts[1].strip(), "제미나이 추천")
-
-                # --- 결과 출력 ---
+                [리스트]
+                {list_sample}
+                """
+                
+                response = gemini_model.generate_content(prompt)
+                lines = response.text.strip().split('\n')
+                
                 st.write("---")
-                for i, (cd, path, label) in enumerate(results):
-                    st.markdown(f'''
-                        <div class="row-container">
-                            <div class="rank-text">{i+1}순위</div>
-                            <div class="code-text">{cd}</div>
-                            <div class="main-name">{path.split(' > ')[-1]}</div>
-                            <div class="score-text">[{label}]</div>
-                        </div>
-                        <div class="path-row">📍 {path}</div>
-                    ''', unsafe_allow_html=True); st.write("---")
-
+                rank = 1
+                for line in lines:
+                    if '|' in line and rank <= 3:
+                        parts = line.split('|')
+                        code = parts[0].strip()
+                        path = parts[1].strip()
+                        # 경로에서 마지막 세분류 명칭만 추출
+                        main_name = path.split(' > ')[-1] if ' > ' in path else path
+                        
+                        st.markdown(f'''
+                            <div class="row-container">
+                                <div class="rank-text">{rank}순위</div>
+                                <div class="code-text">{code}</div>
+                                <div class="main-name">{main_name}</div>
+                                <div class="score-text">[AI 정밀분석]</div>
+                            </div>
+                            <div class="path-row">📍 {path}</div>
+                        ''', unsafe_allow_html=True); st.write("---")
+                        rank += 1
+                        
             except Exception as e:
-                st.error(f"⚠️ 실행 중 에러 발생: {e}")
+                st.error(f"⚠️ 분석 중 오류 발생: {e}")
