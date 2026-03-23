@@ -1,15 +1,25 @@
 import streamlit as st
 import google.generativeai as genai
 
-# [1] API 설정 - 새로 발급받은 키를 " " 안에 넣으세요.
-# 절대 이 부분이 포함된 화면을 캡처해서 인터넷에 올리지 마세요!
+# [1] API 설정 (형님의 키를 넣어주세요)
 API_KEY = "AIzaSyBhlqvD_AW9_cIpJERMkSqNGvcLB5uTpHI"
 genai.configure(api_key=API_KEY)
 
-st.set_page_config(layout="centered", page_title="자재 분석기")
-st.title("🚀 지능형 카테고리 분석기")
+# [2] 마음에 들어 하신 UI 레이아웃 설정
+st.set_page_config(layout="centered", page_title="지능형 자재 분석기 V2")
+st.markdown("""
+    <style>
+    .rank-num { font-size: 1.2rem; font-weight: 800; color: #007BFF; min-width: 45px; }
+    .code-box { background-color: #E9ECEF; padding: 3px 10px; border-radius: 5px; font-family: 'Courier New', monospace; font-weight: bold; color: #495057; }
+    .result-name { font-size: 1.25rem; font-weight: 700; color: #212529; margin-left: 12px; }
+    .path-text { font-size: 0.9rem; color: #6C757D; margin-top: 6px; margin-left: 55px; border-left: 2px solid #DEE2E6; padding-left: 10px; }
+    .info-tag { font-size: 0.8rem; background-color: #D1E7DD; color: #0F5132; padding: 2px 8px; border-radius: 12px; margin-left: 10px; }
+    hr { margin: 20px 0; border: 0; border-top: 1px dashed #CCC; }
+    </style>
+    """, unsafe_allow_html=True)
 
-# [2] 데이터 (형님 데이터 1,836개 싹 붙여넣기)
+# [3] 데이터 (1,836개 원본 리스트)
+# 예시 데이터 형식 준수: "코드": "대 > 중 > 소 > 세부"
 CATEGORY_DATA = {
 "K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
@@ -1849,23 +1859,84 @@ CATEGORY_DATA = {
 "K17100204" : "특수분야 > 용역/비용 > 비용 > 화물택배비",
 }
 
-query = st.text_input("분석할 품명을 입력하세요")
+st.title("🛡️ 지능형 자재 분류 분석기")
+st.caption("형님의 5단계 로직 (연관어 확장 + 소분류 필터링 + AI 최종 추론)")
+
+query = st.text_input("검색할 품명 또는 규격을 입력하세요", placeholder="예: 3M 슈퍼그립 200")
 
 if query:
-    with st.spinner('구글 제미나이 2.0 엔진 가동 중...'):
-        try:
-            # 아까 확인된 가장 확실한 최신 엔진 이름을 씁니다.
-            model = genai.GenerativeModel('gemini-2.0-flash')
+    try:
+        model = genai.GenerativeModel('gemini-1.5-flash') # 속도가 빠른 flash 모델 권장
+        
+        # --- [Step 2] 연관어 도출 ---
+        with st.spinner('1. 연관 카테고리 분석 중...'):
+            p1 = f"'{query}'와 관련된 산업 자재 카테고리 수준의 연관어 5개를 쉼표로만 구분해서 나열해줘. '{query}'를 첫 번째로 포함해."
+            keywords_res = model.generate_content(p1).text.strip()
+            keywords = [k.strip() for k in keywords_res.split(',')]
+            st.write(f"🔍 **분석 키워드:** {', '.join(keywords)}")
+
+        # --- [Step 3] 소분류 기반 우선순위 필터링 (파이썬 로직) ---
+        with st.spinner('2. 1,836개 전수 조사 및 우선순위 선정 중...'):
+            rank1, rank2, rank3 = {}, {}, {}
             
-            items = list(CATEGORY_DATA.items())[:500]
-            list_text = "\n".join([f"{k}: {v}" for k, v in items])
+            for code, path in CATEGORY_DATA.items():
+                parts = path.split(' > ')
+                small_cat = parts[2] if len(parts) >= 3 else ""
+                detail_cat = parts[3] if len(parts) >= 4 else parts[-1]
+                
+                for kw in keywords:
+                    if kw == small_cat or kw == detail_cat: 
+                        rank1[code] = path # 1순위: 100% 일치
+                    elif kw in small_cat or kw in detail_cat:
+                        rank2[code] = path # 2순위: 포함
+                    elif len(kw) >= 2 and any(kw[i:i+2] in path for i in range(len(kw)-1)):
+                        rank3[code] = path # 3순위: 키워드 조합
             
-            prompt = f"품명 '{query}'와 유사한 카테고리 3개를 리스트에서 골라줘.\n\n[리스트]\n{list_text}"
-            
-            response = model.generate_content(prompt)
-            st.success("찾았습니다!")
-            st.write(response.text)
-            
-        except Exception as e:
-            st.error(f"서버 응답 오류: {e}")
-            st.info("팁: 403 유출 에러가 뜨면 키를 새로 만드셔야 합니다.")
+            # 누락 방지 통합: 1순위는 무조건, 나머지는 용량껏 (최대 150개)
+            final_candidates = {**rank3, **rank2, **rank1}
+            candidate_list = list(final_candidates.items())[-150:] # 최신 순위 위주로 150개 추출
+
+        # --- [Step 4] 제미나이 최종 추론 (압축 데이터 전송) ---
+        if candidate_list:
+            with st.spinner('3. 최종 매칭 결과 추론 중...'):
+                # 용량 압축: 코드와 세부분류명만 전달
+                compressed_candidates = "\n".join([f"{k}: {v.split(' > ')[-1]}" for k, v in candidate_list])
+                
+                p2 = f"""
+                입력된 검색어: '{query}'
+                아래 리스트 중에서 '{query}'와 가장 의미적으로 일치하는 최종 카테고리 5개를 골라줘.
+                형식은 반드시 '순위 | 코드 | 매칭이유'로만 대답해.
+                
+                [후보 리스트]
+                {compressed_candidates}
+                """
+                final_res = model.generate_content(p2).text.strip().split('\n')
+                
+                # --- [Step 5] 결과 출력 (형님 맞춤 디자인) ---
+                st.subheader("✅ 분석 결과")
+                count = 0
+                for line in final_res:
+                    if '|' in line and count < 5:
+                        res_parts = line.split('|')
+                        res_code = res_parts[1].strip()
+                        reason = res_parts[2].strip() if len(res_parts) > 2 else ""
+                        
+                        if res_code in CATEGORY_DATA:
+                            full_path = CATEGORY_DATA[res_code]
+                            final_item_name = full_path.split(' > ')[-1]
+                            count += 1
+                            
+                            st.markdown(f'''
+                                <div style="display: flex; align-items: center; margin-top: 10px;">
+                                    <div class="rank-num">#{count}</div>
+                                    <div class="code-box">{res_code}</div>
+                                    <div class="result-name">{final_item_name} <span class="info-tag">{reason}</span></div>
+                                </div>
+                                <div class="path-text">📍 {full_path}</div>
+                            ''', unsafe_allow_html=True)
+                            st.write("---")
+        else:
+            st.warning("일치하는 카테고리를 찾지 못했습니다.")
+
+    except Exception as e:
+        st.error(f"오류 발생: {e} (잠시 후 다시 시도해 주세요)")
