@@ -1,17 +1,18 @@
 import streamlit as st
 import google.generativeai as genai
 
-# --- [1] API 설정 (형님, 키만 정확히! 따옴표 잊지 마세요) ---
-API_KEY = "AIzaSyDnRcEZx5aL1BvgHF-3i982HS01jXNUSm8"
+# --- [1] API 설정 ---
+# 형님, 여기서 'API 키 만들기'로 새로 만든 생생한 키를 넣어주세요!
+API_KEY = "AIzaSyBNXY2bOC7Y5Z1k76wsdZpJu6l0nf1WqCc"
 genai.configure(api_key=API_KEY)
 
 @st.cache_resource
 def load_ai_model():
-    # 가장 기본적이고 오류 없는 이름들만 시도합니다.
+    # 가장 표준적인 이름 딱 2개만 씁니다. (1.5 Flash가 주력입니다)
     for name in ['gemini-1.5-flash', 'gemini-pro']:
         try:
             model = genai.GenerativeModel(name)
-            # 연결 테스트
+            # 연결 테스트 (이게 안 되면 다음 이름으로)
             model.generate_content("hi", generation_config={"max_output_tokens": 1})
             return model
         except:
@@ -38,6 +39,7 @@ st.markdown("""
 st.title("🚀 지능형 카테고리 분석기")
 
 # --- [3] 데이터 (1,836개 리스트) ---
+# 형님, 여기에 엑셀 데이터 싹 붙여넣으시는 거 잊지 마세요!
 CATEGORY_DATA = {
 "K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
@@ -1881,15 +1883,15 @@ query = st.text_input("분석할 품명/규격을 입력하세요", placeholder=
 
 if query:
     if gemini_model is None:
-        st.error("❌ 구글 AI와 연결할 수 없습니다. API 키를 다시 확인하거나 잠시 후 시도해주세요.")
+        st.error("❌ 구글 AI 서버에 접속할 수 없습니다. API 키를 새로 발급받아 교체해보세요.")
     else:
         with st.spinner('제미나이가 카테고리 분석 중...'):
             try:
-                # 텍스트가 너무 길면 에러나니까 700개 정도로 끊어서 보냅니다.
-                items = list(CATEGORY_DATA.items())[:700]
+                # 너무 길면 서버가 거절하니까 800개 정도로 제한해서 보냅니다.
+                items = list(CATEGORY_DATA.items())[:800]
                 list_text = "\n".join([f"{c}: {p}" for c, p in items])
                 
-                prompt = f"품명 '{query}'와 가장 잘 어울리는 카테고리 3개를 아래 리스트에서 골라줘. '코드 | 전체경로 | 이유' 형식으로 딱 3개만 답변해.\n\n[리스트]\n{list_text}"
+                prompt = f"'{query}'와 가장 잘 어울리는 카테고리 3개를 리스트에서 골라줘. '코드 | 전체경로 | 이유' 형식으로 딱 3개만."
                 
                 response = gemini_model.generate_content(prompt)
                 
@@ -1903,9 +1905,9 @@ if query:
                                 <div class="rank-text">{i+1}순위</div>
                                 <div class="code-text">{code}</div>
                                 <div class="main-name">{path.split(' > ')[-1]}</div>
-                                <div class="score-text">[AI 정밀분석]</div>
+                                <div class="score-text">[AI 분석완료]</div>
                             </div>
                             <div class="path-row">📍 {path}</div>
                         ''', unsafe_allow_html=True); st.write("---")
             except Exception as e:
-                st.error(f"⚠️ 분석 중 오류가 발생했습니다. (키가 아직 활성화 중일 수 있습니다)")
+                st.error(f"⚠️ 일시적 오류입니다. 다시 검색해보세요.")
