@@ -2,7 +2,7 @@ import streamlit as st
 import google.generativeai as genai
 
 # [1] API 설정 (형님의 키를 넣어주세요)
-API_KEY = "AIzaSyBhlqvD_AW9_cIpJERMkSqNGvcLB5uTpHI"
+API_KEY = "AIzaSyDKpTsfm27YANK82v7o5PdCr7h5ABQJwnI"
 genai.configure(api_key=API_KEY)
 
 # [2] 마음에 들어 하신 UI 레이아웃 설정
