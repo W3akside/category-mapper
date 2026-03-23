@@ -5,7 +5,7 @@ import torch
 
 # --- [1] 설정: API 키 ---
 # 형님의 API 키를 아래 따옴표 안에 넣어주세요.
-genai.configure(api_key="AIzaSyCVlOoyvOqbmh3FvxiTSCWBFwBTQT1ubmg") 
+genai.configure(api_key="AIzaSyDnRcEZx5aL1BvgHF-3i982HS01jXNUSm8") 
 
 # [에러 방지] 여러 경로로 모델 호출 시도
 def get_gemini_model():
