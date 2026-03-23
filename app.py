@@ -1,32 +1,37 @@
 import streamlit as st
 import google.generativeai as genai
 
-# --- [1] API 설정 (형님, 새로 만든 키를 여기에 넣으세요!) ---
+# --- [1] API 설정 ---
+# 형님, 아까 새로 만든 키를 꼭 따옴표 안에 넣어주세요!
 API_KEY = "AIzaSyDnRcEZx5aL1BvgHF-3i982HS01jXNUSm8" 
 genai.configure(api_key=API_KEY)
 
 @st.cache_resource
 def load_ai_model():
-    # 무료 등급에서 가장 잘 먹히는 이름들을 순서대로 다 찔러봅니다.
-    possible_names = [
-        'models/gemini-1.5-flash',
+    # 무료 등급에서 쓸 수 있는 모든 모델 명칭을 싹 다 집어넣었습니다.
+    model_list = [
         'gemini-1.5-flash',
-        'models/gemini-1.5-flash-latest',
-        'gemini-pro'
+        'models/gemini-1.5-flash',
+        'gemini-1.5-flash-latest',
+        'gemini-1.0-pro',
+        'models/gemini-pro'
     ]
-    for name in possible_names:
+    
+    last_error = ""
+    for m_name in model_list:
         try:
-            model = genai.GenerativeModel(model_name=name)
-            # 실제로 대답을 하는지 1글자 테스트 (이게 통과해야 진짜 연결된 것임)
+            model = genai.GenerativeModel(m_name)
+            # 연결 확인용 가벼운 대화
             model.generate_content("hi", generation_config={"max_output_tokens": 1})
-            return model
-        except:
+            return model, None
+        except Exception as e:
+            last_error = str(e)
             continue
-    return None
+    return None, last_error
 
-gemini_model = load_ai_model()
+gemini_model, error_msg = load_ai_model()
 
-# --- [2] 디자인 CSS (형님의 황금 배치 100% 유지) ---
+# --- [2] 디자인 CSS (형님의 황금 배치) ---
 st.set_page_config(layout="centered", page_title="지능형 카테고리 분석기")
 st.markdown("""
     <style>
@@ -37,15 +42,13 @@ st.markdown("""
     .main-name { font-size: 1.5rem !important; font-weight: 800; color: #1E1E1E; flex-grow: 1; }
     .score-text { font-size: 1.1rem !important; font-weight: 600; color: #999; min-width: 120px; text-align: right; }
     .path-row { font-size: 1.05rem !important; color: #888; margin-top: 4px; margin-left: 75px; }
-    .ai-keyword-box { background-color: #f9f9f9; padding: 12px; border-radius: 8px; margin-bottom: 20px; border-left: 5px solid #007bff; }
     hr { border: 0; border-top: 1px solid #eee; margin: 15px 0; }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("🚀 지능형 카테고리 분석기")
 
-# --- [3] 데이터 바구니 (형님의 1,836개 데이터) ---
-# 엑셀에서 작업한 데이터를 여기에 ["코드": "대 > 중 > 소 > 세"] 형태로 넣으세요.
+# --- [3] 데이터 바구니 (형님 데이터) ---
 CATEGORY_DATA = {
 "K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
@@ -1885,49 +1888,36 @@ CATEGORY_DATA = {
 "K17100204" : "특수분야 > 용역/비용 > 비용 > 화물택배비",
 }
 
-query = st.text_input("분석할 품명/규격을 입력하세요", placeholder="예: 안전화 K2-46")
+query = st.text_input("분석할 품명/규격을 입력하세요", placeholder="예: 안전화 K2")
 
 if query:
     if gemini_model is None:
-        st.error("❌ 구글 AI 모델 연결 실패! API 키를 확인하거나 잠시 후 다시 시도해주세요.")
+        st.error(f"❌ 구글 AI 연결 실패!")
+        st.warning(f"시스템 진단 메시지: {error_msg}")
+        st.info("팁: API 키를 만든 지 5분이 안 되었다면 조금만 더 기다려보세요.")
     else:
-        with st.spinner('제미나이가 카테고리를 정밀 매칭 중...'):
+        with st.spinner('제미나이가 카테고리 분석 중...'):
             try:
-                # 데이터 1000개만 샘플로 추출 (토큰 제한 방지)
-                list_sample = "\n".join([f"{c}: {p}" for c, p in list(CATEGORY_DATA.items())[:1200]])
+                # 데이터가 너무 많으면 구글이 거부하므로 800개로 줄여서 시도
+                list_text = "\n".join([f"{c}: {p}" for c, p in list(CATEGORY_DATA.items())[:800]])
                 
-                prompt = f"""
-                입력품명: {query}
-                너는 자재 관리 전문가야. 아래 [리스트]에서 입력품명과 가장 잘 어울리는 카테고리 3개를 골라줘.
-                결과는 반드시 '코드 | 전체경로 | 이유' 형식으로 출력해줘.
-                
-                [리스트]
-                {list_sample}
-                """
+                prompt = f"입력품명: {query}\n아래 리스트에서 가장 적절한 카테고리 3개를 '코드 | 전체경로 | 이유' 형식으로 골라줘.\n\n[리스트]\n{list_text}"
                 
                 response = gemini_model.generate_content(prompt)
-                lines = response.text.strip().split('\n')
                 
                 st.write("---")
-                rank = 1
-                for line in lines:
-                    if '|' in line and rank <= 3:
+                for i, line in enumerate(response.text.strip().split('\n')):
+                    if '|' in line and i < 3:
                         parts = line.split('|')
-                        code = parts[0].strip()
-                        path = parts[1].strip()
-                        # 경로에서 마지막 세분류 명칭만 추출
-                        main_name = path.split(' > ')[-1] if ' > ' in path else path
-                        
+                        code, path = parts[0].strip(), parts[1].strip()
                         st.markdown(f'''
                             <div class="row-container">
-                                <div class="rank-text">{rank}순위</div>
+                                <div class="rank-text">{i+1}순위</div>
                                 <div class="code-text">{code}</div>
-                                <div class="main-name">{main_name}</div>
-                                <div class="score-text">[AI 정밀분석]</div>
+                                <div class="main-name">{path.split(' > ')[-1]}</div>
+                                <div class="score-text">[정밀 매칭]</div>
                             </div>
                             <div class="path-row">📍 {path}</div>
                         ''', unsafe_allow_html=True); st.write("---")
-                        rank += 1
-                        
             except Exception as e:
-                st.error(f"⚠️ 분석 중 오류 발생: {e}")
+                st.error(f"⚠️ 분석 오류: {e}")
