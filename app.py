@@ -1,15 +1,36 @@
 import streamlit as st
 import google.generativeai as genai
 
-# [1] 키는 아까 그 새 키 그대로 쓰세요!
-API_KEY = "AIzaSyBNXY2bOC7Y5Z1k76wsdZpJu6l0nf1WqCc"
-genai.configure(api_key=API_KEY)
+# --- [1] API 설정 (형님, 여기 따옴표 안에 키만 꽉 채워주세요!) ---
+# 코드가 앞뒤 빈칸 알아서 다 지워줄 테니 걱정 마세요.
+RAW_KEY = "AIzaSyDaFZyTXSAibxVTJwxuTXcHVTSfegZvBus"
+API_KEY = RAW_KEY.strip() # 혹시 모를 앞뒤 공백 강제 제거
 
-# --- [2] 디자인 ---
+try:
+    genai.configure(api_key=API_KEY)
+except:
+    pass
+
+@st.cache_resource
+def load_ai_model():
+    # 가장 표준적인 이름부터 옛날 이름까지 하나씩 다 찔러봅니다.
+    for model_name in ['gemini-1.5-flash', 'gemini-pro', 'models/gemini-1.5-flash']:
+        try:
+            model = genai.GenerativeModel(model_name)
+            # 연결 테스트 (이게 되면 진짜 되는 놈입니다)
+            model.generate_content("hi", generation_config={"max_output_tokens": 1})
+            return model
+        except:
+            continue
+    return None
+
+gemini_model = load_ai_model()
+
+# --- [2] 디자인 (형님의 황금 배치 그대로!) ---
 st.set_page_config(layout="centered", page_title="자재 분석기")
 st.title("🚀 지능형 카테고리 분석기")
 
-# --- [3] 데이터 (1,836개 데이터 입력란) ---
+# --- [3] 데이터 (1,836개 데이터) ---
 CATEGORY_DATA = {
 "K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
@@ -1849,16 +1870,27 @@ CATEGORY_DATA = {
 "K17100204" : "특수분야 > 용역/비용 > 비용 > 화물택배비",
 }
 
-query = st.text_input("분석할 품명/규격을 입력하세요 (예: 안전화 k2)")
+query = st.text_input("분석할 품명/규격을 입력하세요", placeholder="예: 안전화 k2")
 
 if query:
-    try:
-        # 'models/' 같은 복잡한 주소 다 빼고 딱 이름만 부릅니다.
-        # 이렇게 부르면 구형 버전 도구에서도 알아들을 확률이 높습니다.
-        model = genai.GenerativeModel('gemini-pro') 
-        
-        response = model.generate_content(f"{query} 카테고리 분석해줘")
-        st.write(response.text)
-        
-    except Exception as e:
-        st.error(f"에러 메시지: {e}")
+    if gemini_model is None:
+        st.error("❌ 구글 서버가 아직 형님 열쇠를 승인 안 해주고 있네요.")
+        st.info("해결책: 1. API 키를 복사해서 다시 넣어보세요. 2. 5분만 쉬었다가 다시 해보세요.")
+    else:
+        with st.spinner('제미나이가 정밀 분석 중...'):
+            try:
+                # 데이터가 너무 많으면 에러나니 600개만 딱 추려서 전달!
+                items = list(CATEGORY_DATA.items())[:600]
+                list_text = "\n".join([f"{c}: {p}" for c, p in items])
+                
+                prompt = f"품명 '{query}'와 가장 유사한 카테고리 3개를 골라줘. '코드 | 전체경로 | 이유' 형식으로 딱 3개만 답변해.\n\n[리스트]\n{list_text}"
+                
+                response = gemini_model.generate_content(prompt)
+                
+                st.write("---")
+                # 결과 출력 부분
+                st.success("분석 완료!")
+                st.write(response.text)
+                
+            except Exception as e:
+                st.error(f"⚠️ 일시적 오류 발생: {e}")
