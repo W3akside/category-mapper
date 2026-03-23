@@ -1,15 +1,14 @@
 import streamlit as st
 import google.generativeai as genai
 
-# [1] API 설정 - 가장 단순하게!
+# [1] API 설정 (브라우저에서 확인된 그 키를 넣어주세요)
 API_KEY = "AIzaSyDaFZyTXSAibxVTJwxuTXcHVTSfegZvBus"
 genai.configure(api_key=API_KEY)
 
-# [2] 디자인
-st.set_page_config(layout="centered", page_title="카테고리 분석기")
+st.set_page_config(layout="centered", page_title="자재 분석기")
 st.title("🚀 지능형 카테고리 분석기")
 
-# [3] 데이터 (1,836개 데이터 싹 붙여넣으세요)
+# [2] 데이터 (1,836개 데이터)
 CATEGORY_DATA = {
 "K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
@@ -1849,27 +1848,31 @@ CATEGORY_DATA = {
 "K17100204" : "특수분야 > 용역/비용 > 비용 > 화물택배비",
 }
 
-query = st.text_input("분석할 품명/규격을 입력하세요")
+query = st.text_input("분석할 품명을 입력하세요")
 
 if query:
-    with st.spinner('AI 분석 중...'):
+    with st.spinner('제미나이 2.0 엔진 가동 중...'):
         try:
-            # 💡 핵심: 복잡한 함수 없이 여기서 바로 모델을 부릅니다.
-            # 주소창 테스트에서 확인된 최신 이름을 사용합니다.
-            model = genai.GenerativeModel('gemini-1.5-flash')
+            # 💡 형님 브라우저에서 확인된 '진짜' 이름을 씁니다.
+            # 2.0-flash가 가장 빠르고 정확합니다.
+            model = genai.GenerativeModel('gemini-2.0-flash')
             
-            # 데이터 양을 딱 500개로 줄여서 보냅니다 (에러 방지)
-            sample_data = "\n".join([f"{k}: {v}" for k, v in list(CATEGORY_DATA.items())[:500]])
+            # 컨텍스트가 너무 길면 에러날 수 있으니 상위 400개만 전달
+            items = list(CATEGORY_DATA.items())[:400]
+            list_text = "\n".join([f"{k}: {v}" for k, v in items])
             
-            prompt = f"품명 '{query}'와 가장 유사한 카테고리 3개를 리스트에서 골라줘.\n\n[리스트]\n{sample_data}"
+            prompt = f"품명 '{query}'와 가장 유사한 카테고리 3개를 골라줘.\n\n[리스트]\n{list_text}"
             
-            # 분석 요청
             response = model.generate_content(prompt)
             
-            # 결과 출력
-            st.success("찾았습니다!")
+            st.success("분석 완료!")
             st.write(response.text)
             
         except Exception as e:
-            # 그래도 안 되면 여기서 진짜 이유를 한글로 보여줍니다.
-            st.error(f"연결은 됐는데 분석에 실패했습니다. (사유: {e})")
+            # 2.0이 안 되면 1.5로 자동 전환하는 보험 코드
+            try:
+                model = genai.GenerativeModel('gemini-1.5-flash')
+                response = model.generate_content(prompt)
+                st.write(response.text)
+            except:
+                st.error(f"서버 응답 오류: {e}")
