@@ -1,26 +1,24 @@
 import streamlit as st
-from sentence_transformers import SentenceTransformer, util
 import google.generativeai as genai
+from sentence_transformers import SentenceTransformer, util
 import torch
 
-# --- [1] API 설정 (가장 중요) ---
-# 구글 AI 스튜디오에서 새로 만든 키를 넣어주세요.
-API_KEY = "AIzaSyDnRcEZx5aL1BvgHF-3i982HS01jXNUSm8"
+# --- [1] API 설정 ---
+API_KEY = "여기에_새로_발급받은_API_키_입력"
 genai.configure(api_key=API_KEY)
 
 @st.cache_resource
 def load_ai_model():
-    # 정책 변경 대응: 무료 티어는 반드시 'models/gemini-1.5-flash' 풀네임을 써야 합니다.
+    # 최신 라이브러리 기준 모델 선언
     try:
-        # 최신 안정화 모델명 강제 지정
-        model = genai.GenerativeModel('models/gemini-1.5-flash')
-        # 키 활성화 테스트 (한 글자 호출)
-        model.generate_content("test", generation_config={"max_output_tokens": 1})
+        # 모델 이름에서 'models/'를 빼고 시도 (최신 라이브러리 방식)
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        model.generate_content("hi", generation_config={"max_output_tokens": 1})
         return model
-    except Exception as e:
-        # 실패 시 구형 모델로 한 번 더 시도
+    except:
         try:
-            return genai.GenerativeModel('models/gemini-pro')
+            # 실패 시 'models/' 포함해서 재시도
+            return genai.GenerativeModel('models/gemini-1.5-flash')
         except:
             return None
 
