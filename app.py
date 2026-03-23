@@ -1,9 +1,16 @@
 import streamlit as st
 import google.generativeai as genai
+import os
 
-# [1] API 설정 (형님의 키를 넣어주세요)
-API_KEY = "AIzaSyDKpTsfm27YANK82v7o5PdCr7h5ABQJwnI"
-genai.configure(api_key=API_KEY)
+# [1] API 설정 (보안 강화: Secrets 방식 적용)
+# Streamlit Cloud의 Settings -> Secrets에 GEMINI_API_KEY = "내키" 를 넣으셔야 합니다.
+if "GEMINI_API_KEY" in st.secrets:
+    API_KEY = st.secrets["GEMINI_API_KEY"]
+    genai.configure(api_key=API_KEY)
+else:
+    # 로컬 테스트 시 환경 변수나 직접 입력을 위한 예외 처리
+    st.warning("⚠️ API 키가 설정되지 않았습니다. Streamlit Secrets 설정을 확인해주세요.")
+    st.stop() # 키가 없으면 실행 중단
 
 # [2] 마음에 들어 하신 UI 레이아웃 설정
 st.set_page_config(layout="centered", page_title="지능형 자재 분석기 V2")
@@ -18,8 +25,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# [3] 데이터 (1,836개 원본 리스트)
-# 예시 데이터 형식 준수: "코드": "대 > 중 > 소 > 세부"
+# [3] 데이터 (1,836개 원본 리스트) - 형님의 데이터가 들어갈 자리
 CATEGORY_DATA = {
 "K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
@@ -1866,6 +1872,7 @@ query = st.text_input("검색할 품명 또는 규격을 입력하세요", place
 
 if query:
     try:
+        # 모델 설정 (최신 Flash 2.0 사용)
         model = genai.GenerativeModel('gemini-2.0-flash')
         
         # --- [Step 2] 연관어 도출 ---
@@ -1894,25 +1901,28 @@ if query:
             
             # 누락 방지 통합: 1순위는 무조건, 나머지는 용량껏 (최대 150개)
             final_candidates = {**rank3, **rank2, **rank1}
-            candidate_list = list(final_candidates.items())[-150:] # 최신 순위 위주로 150개 추출
+            candidate_list = list(final_candidates.items())[-150:]
 
-        # --- [Step 4] 제미나이 최종 추론 (압축 데이터 전송) ---
+        # --- [Step 4] 제미나이 최종 추론 ---
         if candidate_list:
             with st.spinner('3. 최종 매칭 결과 추론 중...'):
-                # 용량 압축: 코드와 세부분류명만 전달
                 compressed_candidates = "\n".join([f"{k}: {v.split(' > ')[-1]}" for k, v in candidate_list])
                 
+                # 형님이 아까 요구하신 '모르면 모른다 하기' 지침 추가
                 p2 = f"""
+                [지침: 냉정한 산업 자재 전문가]
                 입력된 검색어: '{query}'
-                아래 리스트 중에서 '{query}'와 가장 의미적으로 일치하는 최종 카테고리 5개를 골라줘.
-                형식은 반드시 '순위 | 코드 | 매칭이유'로만 대답해.
+                아래 리스트 중에서 가장 의미적으로 일치하는 최종 카테고리 5개를 골라줘.
+                만약 후보 중에 적합한 것이 전혀 없다면 억지로 고르지 말고 '데이터 부족'이라고 말해.
+                
+                형식: '순위 | 코드 | 매칭이유'
                 
                 [후보 리스트]
                 {compressed_candidates}
                 """
                 final_res = model.generate_content(p2).text.strip().split('\n')
                 
-                # --- [Step 5] 결과 출력 (형님 맞춤 디자인) ---
+                # --- [Step 5] 결과 출력 ---
                 st.subheader("✅ 분석 결과")
                 count = 0
                 for line in final_res:
@@ -1939,4 +1949,4 @@ if query:
             st.warning("일치하는 카테고리를 찾지 못했습니다.")
 
     except Exception as e:
-        st.error(f"오류 발생: {e} (잠시 후 다시 시도해 주세요)")
+        st.error(f"오류 발생: {e} (API 키 설정을 확인해 주세요)")
