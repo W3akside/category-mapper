@@ -3,32 +3,37 @@ from sentence_transformers import SentenceTransformer, util
 import google.generativeai as genai
 import torch
 
-# --- [1] API 설정 (형님의 새 키를 넣어주세요) ---
+# --- [1] API 설정 (가장 중요) ---
+# 구글 AI 스튜디오에서 새로 만든 키를 넣어주세요.
 API_KEY = "AIzaSyDnRcEZx5aL1BvgHF-3i982HS01jXNUSm8"
 genai.configure(api_key=API_KEY)
 
 @st.cache_resource
 def load_ai_model():
-    # 무료 등급(Free Tier)은 반드시 'models/' 경로를 명시해야 에러가 안 납니다.
-    for name in ["models/gemini-1.5-flash", "models/gemini-pro"]:
+    # 정책 변경 대응: 무료 티어는 반드시 'models/gemini-1.5-flash' 풀네임을 써야 합니다.
+    try:
+        # 최신 안정화 모델명 강제 지정
+        model = genai.GenerativeModel('models/gemini-1.5-flash')
+        # 키 활성화 테스트 (한 글자 호출)
+        model.generate_content("test", generation_config={"max_output_tokens": 1})
+        return model
+    except Exception as e:
+        # 실패 시 구형 모델로 한 번 더 시도
         try:
-            model = genai.GenerativeModel(name)
-            # 작동 테스트
-            model.generate_content("hi", generation_config={"max_output_tokens": 1})
-            return model
+            return genai.GenerativeModel('models/gemini-pro')
         except:
-            continue
-    return None
+            return None
 
 gemini_model = load_ai_model()
 
 @st.cache_resource
 def load_embedding_model():
+    # 다국어(한국어 포함) 유사도 분석 모델
     return SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
 
 local_model = load_embedding_model()
 
-# --- [2] 디자인 CSS (생략 없이 전체 포함) ---
+# --- [2] 디자인 CSS (형님의 황금 배치) ---
 st.set_page_config(layout="centered", page_title="지능형 카테고리 분석기")
 st.markdown("""
     <style>
@@ -40,12 +45,13 @@ st.markdown("""
     .score-text { font-size: 1.1rem !important; font-weight: 600; color: #999; min-width: 120px; text-align: right; }
     .path-row { font-size: 1.05rem !important; color: #888; margin-top: 4px; margin-left: 75px; }
     .ai-keyword-box { background-color: #f9f9f9; padding: 12px; border-radius: 8px; margin-bottom: 20px; border-left: 5px solid #007bff; }
+    hr { border: 0; border-top: 1px solid #eee; margin: 15px 0; }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("🚀 지능형 카테고리 분석기")
 
-# --- [3] 데이터 (형님 데이터 1,836개 입력) ---
+# --- [3] 데이터 바구니 (형님 데이터 1,836개 입력) ---
 CATEGORY_DATA = {
 "K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
@@ -1885,28 +1891,29 @@ CATEGORY_DATA = {
 "K17100204" : "특수분야 > 용역/비용 > 비용 > 화물택배비",
 }
 
-query = st.text_input("분석할 품명/규격을 입력하세요")
+query = st.text_input("분석할 품명/규격을 입력하세요", placeholder="예: 비닐 1000*1500")
 
 if query:
     if gemini_model is None:
-        st.error("❌ 무료 API 키 인증 경로 오류입니다. (모델 경로 확인 필요)")
+        st.error("❌ 구글 AI 정책 변경으로 인한 인증 오류입니다. API 키가 'Free Tier'인지 다시 확인해주세요.")
     else:
-        with st.spinner('제미나이 분석 중...'):
+        with st.spinner('제미나이가 정밀 키워드를 선정 중...'):
             try:
-                # 무료 등급에 최적화된 호출
-                response = gemini_model.generate_content(f"'{query}'와 연관된 한국어 산업용 카테고리 단어 5개를 쉼표로 나열해줘.")
+                # 무료 티어 호출 규격 준수
+                response = gemini_model.generate_content(f"'{query}'와 가장 연관된 한국어 산업용 세부 카테고리 단어 5개를 쉼표로만 나열해줘.")
                 ai_keywords = [k.strip() for k in response.text.split(',') if len(k.strip()) >= 2][:5]
                 
                 if ai_keywords:
-                    st.markdown(f"""<div class="ai-keyword-box"><b>🔍 제미나이 추천 키워드:</b> {' | '.join(ai_keywords)}</div>""", unsafe_allow_html=True)
+                    st.markdown(f"""<div class="ai-keyword-box"><b>🔍 제미나이 선정 핵심 키워드:</b> {' | '.join(ai_keywords)}</div>""", unsafe_allow_html=True)
                 
+                # 6단계 필터링 로직 실행
                 results = []
                 seen_codes = set()
                 def add_res(c, p, l):
                     if c not in seen_codes and len(results) < 5:
                         results.append((c, p, l)); seen_codes.add(c)
 
-                # 6단계 필터링 로직
+                # 매칭 로직 (형님의 6단계 룰)
                 for kw in ai_keywords:
                     split_kw = [w for w in kw.split() if len(w) >= 2]
                     for cd, path in CATEGORY_DATA.items():
@@ -1916,7 +1923,7 @@ if query:
                         elif len(split_kw) >= 2 and all(s in detail for s in split_kw): add_res(cd, path, "전체 매칭")
                         elif len(split_kw) >= 2 and any(s in detail for s in split_kw): add_res(cd, path, "부분 매칭")
 
-                # 보험용 유사도
+                # 결과 부족 시 보험용 AI 유사도
                 if len(results) < 5:
                     all_paths = list(CATEGORY_DATA.values())
                     all_codes = list(CATEGORY_DATA.keys())
@@ -1926,6 +1933,8 @@ if query:
                     t_val, t_idx = torch.topk(scores, k=min(10, len(all_paths)))
                     for idx in t_idx: add_res(all_codes[idx], all_paths[idx], "AI 유사도")
 
+                # 결과 출력
+                st.write("---")
                 for i, (cd, path, label) in enumerate(results):
                     st.markdown(f'''
                         <div class="row-container">
@@ -1936,5 +1945,6 @@ if query:
                         </div>
                         <div class="path-row">📍 {path}</div>
                     ''', unsafe_allow_html=True); st.write("---")
+
             except Exception as e:
-                st.error(f"⚠️ 연결 오류: {e}")
+                st.error(f"⚠️ 연결 오류 (구글 서버 응답 없음): {e}")
