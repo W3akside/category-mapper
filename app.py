@@ -1,22 +1,20 @@
 import streamlit as st
 import google.generativeai as genai
 
-# --- [1] API 설정 (형님 코드 그대로 유지) ---
-API_KEY = "AIzaSyDnRCEZx5aL1BvgHF-3i982HS01jXNUSm8"
+# --- [1] API 설정 (형님, 여기에 따옴표 안에 키만 정확히 넣으세요!) ---
+API_KEY = "AIzaSyDnRcEZx5aL1BvgHF-3i982HS01jXNUSm8" # ← 여기에 복사한 API 키를 따옴표 안에 넣으세요
 genai.configure(api_key=API_KEY)
 
 @st.cache_resource
 def load_ai_model():
     try:
+        # 최신 안정화 모델명 강제 지정
         model = genai.GenerativeModel('models/gemini-1.5-flash')
         return model
     except:
         return None
 
 gemini_model = load_ai_model()
-
-# 🚀 [변경점 1] 무거운 SentenceTransformer 로딩 부분을 삭제했습니다.
-# 이제 앱이 켜지자마자 바로 작동합니다.
 
 # --- [2] 디자인 CSS (형님의 황금 배치 그대로 유지) ---
 st.set_page_config(layout="centered", page_title="지능형 카테고리 분석기")
@@ -36,8 +34,8 @@ st.markdown("""
 
 st.title("🚀 지능형 카테고리 분석기")
 
-# --- [3] 데이터 바구니 (형님의 1,836개 데이터) ---
-# 형님이 엑셀에서 작업한 데이터를 여기에 ["코드", "대>중>소>세"] 형태로 넣어주세요.
+# --- [3] 데이터 바구니 (여기에 형님의 1,836개 데이터를 싹 붙여넣으세요) ---
+# 엑셀에서 "코드": "대 > 중 > 소 > 세" 형태로 만들어서 아래 중괄호 { } 안에 넣으시면 됩니다.
 CATEGORY_DATA = {
 "K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
@@ -1881,49 +1879,60 @@ query = st.text_input("분석할 품명/규격을 입력하세요", placeholder=
 
 if query:
     if gemini_model is None:
-        st.error("❌ 구글 AI 인증 오류입니다.")
+        st.error("❌ 구글 AI 인증 오류입니다. API 키를 다시 확인해주세요.")
     else:
-        with st.spinner('제미나이가 전체 리스트에서 최적의 카테고리를 분석 중...'):
+        with st.spinner('제미나이가 정밀 분석 중...'):
             try:
-                # 🚀 [변경점 2] 로컬에서 계산하지 않고, 제미나이에게 리스트를 던져서 찾아오라고 시킵니다.
-                # 리스트가 너무 길면 에러날 수 있어 상위 1500개 정도만 텍스트로 합쳐서 보냅니다.
-                full_list_text = "\n".join([f"{k}: {v}" for k, v in list(CATEGORY_DATA.items())[:1500]])
+                # 1단계: 제미나이에게 키워드 추출 요청
+                response = gemini_model.generate_content(f"'{query}'와 연관된 한국어 산업용 세부 카테고리 단어 5개를 쉼표로만 나열해줘.")
+                ai_keywords = [k.strip() for k in response.text.split(',') if len(k.strip()) >= 2][:5]
                 
-                prompt = f"""
-                너는 자재 분류 전문가야. 아래의 [기준 데이터]에서 [입력 품명]과 가장 잘 어울리는 카테고리 3개를 찾아줘.
+                if ai_keywords:
+                    st.markdown(f"""<div class="ai-keyword-box"><b>🔍 제미나이 선정 핵심 키워드:</b> {' | '.join(ai_keywords)}</div>""", unsafe_allow_html=True)
                 
-                [입력 품명]: {query}
-                
-                [기준 데이터]:
-                {full_list_text}
-                
-                [출력 양식]:
-                반드시 아래와 같은 형식으로 3개만 답변해줘. 다른 말은 하지마.
-                코드1 | 전체경로1 | 이유1
-                코드2 | 전체경로2 | 이유2
-                코드3 | 전체경로3 | 이유3
-                """
-                
-                response = gemini_model.generate_content(prompt)
-                ai_results = response.text.strip().split('\n')
+                # 결과 저장용 리스트
+                results = []
+                seen_codes = set()
+                def add_res(c, p, l):
+                    if c not in seen_codes and len(results) < 5:
+                        results.append((c, p, l)); seen_codes.add(c)
 
-                # --- 결과 출력 (형님의 황금 배치 디자인 그대로 활용) ---
+                # 2단계: 키워드 기반 단순 매칭 (형님의 6단계 룰)
+                for kw in ai_keywords:
+                    for cd, path in CATEGORY_DATA.items():
+                        detail = path.split(' > ')[-1]
+                        if kw == detail: add_res(cd, path, "100% 일치")
+                        elif kw in detail: add_res(cd, path, "단어 포함")
+
+                # 3단계: 매칭 결과 부족 시 제미나이 전체 리스트 대조 (보험용)
+                if len(results) < 5:
+                    full_list_text = "\n".join([f"{c}: {p}" for c, p in list(CATEGORY_DATA.items())[:1500]])
+                    prompt = f"""[입력 품명]: {query}
+                    위 품명과 가장 잘 어울리는 카테고리 3개를 아래 리스트에서 골라줘.
+                    반드시 리스트에 있는 형식 그대로 출력해.
+                    출력형식: 코드 | 전체경로 | 이유
+                    [리스트]
+                    {full_list_text}"""
+                    
+                    ai_res = gemini_model.generate_content(prompt)
+                    for line in ai_res.text.strip().split('\n'):
+                        if '|' in line:
+                            parts = line.split('|')
+                            if len(parts) >= 2:
+                                add_res(parts[0].strip(), parts[1].strip(), "제미나이 추천")
+
+                # --- 결과 출력 (형님의 황금 배치) ---
                 st.write("---")
-                for i, res in enumerate(ai_results):
-                    try:
-                        # 제미나이가 준 답변을 잘라서 형님 디자인에 입힙니다.
-                        cd, path, reason = res.split('|')
-                        st.markdown(f'''
-                            <div class="row-container">
-                                <div class="rank-text">{i+1}순위</div>
-                                <div class="code-text">{cd.strip()}</div>
-                                <div class="main-name">{path.split(' > ')[-1].strip()}</div>
-                                <div class="score-text">[분석 일치]</div>
-                            </div>
-                            <div class="path-row">📍 {path.strip()} <br> 💡 {reason.strip()}</div>
-                        ''', unsafe_allow_html=True); st.write("---")
-                    except:
-                        continue # 혹시라도 형식이 안 맞으면 패스
+                for i, (cd, path, label) in enumerate(results):
+                    st.markdown(f'''
+                        <div class="row-container">
+                            <div class="rank-text">{i+1}순위</div>
+                            <div class="code-text">{cd}</div>
+                            <div class="main-name">{path.split(' > ')[-1]}</div>
+                            <div class="score-text">[{label}]</div>
+                        </div>
+                        <div class="path-row">📍 {path}</div>
+                    ''', unsafe_allow_html=True); st.write("---")
 
             except Exception as e:
-                st.error(f"⚠️ 연결 오류: {e}")
+                st.error(f"⚠️ 에러 발생: {e}")
