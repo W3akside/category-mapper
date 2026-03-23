@@ -1,14 +1,15 @@
 import streamlit as st
 import google.generativeai as genai
 
-# [1] API 설정 (브라우저에서 확인된 그 키를 넣어주세요)
-API_KEY = "AIzaSyDaFZyTXSAibxVTJwxuTXcHVTSfegZvBus"
+# [1] API 설정 - 새로 발급받은 키를 " " 안에 넣으세요.
+# 절대 이 부분이 포함된 화면을 캡처해서 인터넷에 올리지 마세요!
+API_KEY = "AIzaSyBhlqvD_AW9_cIpJERMkSqNGvcLB5uTpHI"
 genai.configure(api_key=API_KEY)
 
 st.set_page_config(layout="centered", page_title="자재 분석기")
 st.title("🚀 지능형 카테고리 분석기")
 
-# [2] 데이터 (1,836개 데이터)
+# [2] 데이터 (형님 데이터 1,836개 싹 붙여넣기)
 CATEGORY_DATA = {
 "K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
@@ -1851,28 +1852,20 @@ CATEGORY_DATA = {
 query = st.text_input("분석할 품명을 입력하세요")
 
 if query:
-    with st.spinner('제미나이 2.0 엔진 가동 중...'):
+    with st.spinner('구글 제미나이 2.0 엔진 가동 중...'):
         try:
-            # 💡 형님 브라우저에서 확인된 '진짜' 이름을 씁니다.
-            # 2.0-flash가 가장 빠르고 정확합니다.
+            # 아까 확인된 가장 확실한 최신 엔진 이름을 씁니다.
             model = genai.GenerativeModel('gemini-2.0-flash')
             
-            # 컨텍스트가 너무 길면 에러날 수 있으니 상위 400개만 전달
-            items = list(CATEGORY_DATA.items())[:400]
+            items = list(CATEGORY_DATA.items())[:500]
             list_text = "\n".join([f"{k}: {v}" for k, v in items])
             
-            prompt = f"품명 '{query}'와 가장 유사한 카테고리 3개를 골라줘.\n\n[리스트]\n{list_text}"
+            prompt = f"품명 '{query}'와 유사한 카테고리 3개를 리스트에서 골라줘.\n\n[리스트]\n{list_text}"
             
             response = model.generate_content(prompt)
-            
-            st.success("분석 완료!")
+            st.success("찾았습니다!")
             st.write(response.text)
             
         except Exception as e:
-            # 2.0이 안 되면 1.5로 자동 전환하는 보험 코드
-            try:
-                model = genai.GenerativeModel('gemini-1.5-flash')
-                response = model.generate_content(prompt)
-                st.write(response.text)
-            except:
-                st.error(f"서버 응답 오류: {e}")
+            st.error(f"서버 응답 오류: {e}")
+            st.info("팁: 403 유출 에러가 뜨면 키를 새로 만드셔야 합니다.")
