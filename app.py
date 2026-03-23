@@ -1,18 +1,22 @@
 import streamlit as st
 import google.generativeai as genai
 
-# --- [1] API 설정 (형님, 여기에 따옴표 안에 키만 정확히 넣으세요!) ---
-API_KEY = "AIzaSyDnRcEZx5aL1BvgHF-3i982HS01jXNUSm8" # ← 여기에 복사한 API 키를 따옴표 안에 넣으세요
+# --- [1] API 설정 (형님, 키 복사할 때 앞뒤 공백 없는지 꼭 확인하세요!) ---
+API_KEY = "AIzaSyDnRcEZx5aL1BvgHF-3i982HS01jXNUSm8" # ← 여기에 따옴표 안에 키만 정확히 넣으세요
 genai.configure(api_key=API_KEY)
 
 @st.cache_resource
 def load_ai_model():
-    try:
-        # 최신 안정화 모델명 강제 지정
-        model = genai.GenerativeModel('models/gemini-1.5-flash')
-        return model
-    except:
-        return None
+    # 404 에러 방지를 위해 가장 잘 먹히는 이름 순서대로 시도합니다.
+    for model_name in ['gemini-1.5-flash', 'models/gemini-1.5-flash', 'gemini-pro']:
+        try:
+            model = genai.GenerativeModel(model_name)
+            # 연결 테스트
+            model.generate_content("test", generation_config={"max_output_tokens": 1})
+            return model
+        except:
+            continue
+    return None
 
 gemini_model = load_ai_model()
 
@@ -34,8 +38,7 @@ st.markdown("""
 
 st.title("🚀 지능형 카테고리 분석기")
 
-# --- [3] 데이터 바구니 (여기에 형님의 1,836개 데이터를 싹 붙여넣으세요) ---
-# 엑셀에서 "코드": "대 > 중 > 소 > 세" 형태로 만들어서 아래 중괄호 { } 안에 넣으시면 됩니다.
+# --- [3] 데이터 바구니 (1,836개 데이터) ---
 CATEGORY_DATA = {
 "K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
@@ -1879,41 +1882,32 @@ query = st.text_input("분석할 품명/규격을 입력하세요", placeholder=
 
 if query:
     if gemini_model is None:
-        st.error("❌ 구글 AI 인증 오류입니다. API 키를 다시 확인해주세요.")
+        st.error("❌ 구글 AI 모델을 찾을 수 없거나 인증 오류입니다. API 키와 모델명을 다시 확인해야 합니다.")
     else:
         with st.spinner('제미나이가 정밀 분석 중...'):
             try:
-                # 1단계: 제미나이에게 키워드 추출 요청
+                # 1단계: 키워드 추출
                 response = gemini_model.generate_content(f"'{query}'와 연관된 한국어 산업용 세부 카테고리 단어 5개를 쉼표로만 나열해줘.")
                 ai_keywords = [k.strip() for k in response.text.split(',') if len(k.strip()) >= 2][:5]
                 
                 if ai_keywords:
                     st.markdown(f"""<div class="ai-keyword-box"><b>🔍 제미나이 선정 핵심 키워드:</b> {' | '.join(ai_keywords)}</div>""", unsafe_allow_html=True)
                 
-                # 결과 저장용 리스트
                 results = []
                 seen_codes = set()
                 def add_res(c, p, l):
                     if c not in seen_codes and len(results) < 5:
                         results.append((c, p, l)); seen_codes.add(c)
 
-                # 2단계: 키워드 기반 단순 매칭 (형님의 6단계 룰)
+                # 2단계: 키워드 기반 단순 매칭
                 for kw in ai_keywords:
                     for cd, path in CATEGORY_DATA.items():
-                        detail = path.split(' > ')[-1]
-                        if kw == detail: add_res(cd, path, "100% 일치")
-                        elif kw in detail: add_res(cd, path, "단어 포함")
+                        if kw in path.split(' > ')[-1]: add_res(cd, path, "키워드 매칭")
 
-                # 3단계: 매칭 결과 부족 시 제미나이 전체 리스트 대조 (보험용)
+                # 3단계: 전체 리스트 대조 (보험용)
                 if len(results) < 5:
-                    full_list_text = "\n".join([f"{c}: {p}" for c, p in list(CATEGORY_DATA.items())[:1500]])
-                    prompt = f"""[입력 품명]: {query}
-                    위 품명과 가장 잘 어울리는 카테고리 3개를 아래 리스트에서 골라줘.
-                    반드시 리스트에 있는 형식 그대로 출력해.
-                    출력형식: 코드 | 전체경로 | 이유
-                    [리스트]
-                    {full_list_text}"""
-                    
+                    full_list_text = "\n".join([f"{c}: {p}" for c, p in list(CATEGORY_DATA.items())[:1000]]) # 토큰 제한 고려
+                    prompt = f"품명: {query}\n위 품명과 가장 유사한 카테고리 3개를 리스트에서 골라줘.\n형식: 코드 | 전체경로 | 이유\n\n리스트:\n{full_list_text}"
                     ai_res = gemini_model.generate_content(prompt)
                     for line in ai_res.text.strip().split('\n'):
                         if '|' in line:
@@ -1921,7 +1915,7 @@ if query:
                             if len(parts) >= 2:
                                 add_res(parts[0].strip(), parts[1].strip(), "제미나이 추천")
 
-                # --- 결과 출력 (형님의 황금 배치) ---
+                # --- 결과 출력 ---
                 st.write("---")
                 for i, (cd, path, label) in enumerate(results):
                     st.markdown(f'''
@@ -1935,4 +1929,4 @@ if query:
                     ''', unsafe_allow_html=True); st.write("---")
 
             except Exception as e:
-                st.error(f"⚠️ 에러 발생: {e}")
+                st.error(f"⚠️ 실행 중 에러 발생: {e}")
