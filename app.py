@@ -1,35 +1,28 @@
 import streamlit as st
 import google.generativeai as genai
+from google.generativeai.types import RequestOptions
 
-# --- [1] API 설정 ---
-# 형님, 아까 새로 만든 키를 꼭 따옴표 안에 넣어주세요!
+# --- [1] API 설정 (형님, 키만 정확히 넣어주세요!) ---
 API_KEY = "AIzaSyDnRcEZx5aL1BvgHF-3i982HS01jXNUSm8" 
 genai.configure(api_key=API_KEY)
 
 @st.cache_resource
 def load_ai_model():
-    # 무료 등급에서 쓸 수 있는 모든 모델 명칭을 싹 다 집어넣었습니다.
-    model_list = [
-        'gemini-1.5-flash',
-        'models/gemini-1.5-flash',
-        'gemini-1.5-flash-latest',
-        'gemini-1.0-pro',
-        'models/gemini-pro'
-    ]
+    # v1beta 에러를 피하기 위해 정식 'v1' 통로를 강제로 지정합니다.
+    options = RequestOptions(api_version='v1') 
     
-    last_error = ""
-    for m_name in model_list:
-        try:
-            model = genai.GenerativeModel(m_name)
-            # 연결 확인용 가벼운 대화
-            model.generate_content("hi", generation_config={"max_output_tokens": 1})
-            return model, None
-        except Exception as e:
-            last_error = str(e)
-            continue
-    return None, last_error
+    # 무료 등급에서 가장 확실한 모델 명칭
+    model_name = 'models/gemini-1.5-flash'
+    
+    try:
+        model = genai.GenerativeModel(model_name=model_name)
+        # 통로(v1)를 강제로 고정해서 테스트 호출
+        model.generate_content("hi", request_options=options, generation_config={"max_output_tokens": 1})
+        return model, options, None
+    except Exception as e:
+        return None, None, str(e)
 
-gemini_model, error_msg = load_ai_model()
+gemini_model, api_options, error_msg = load_ai_model()
 
 # --- [2] 디자인 CSS (형님의 황금 배치) ---
 st.set_page_config(layout="centered", page_title="지능형 카테고리 분석기")
@@ -42,13 +35,14 @@ st.markdown("""
     .main-name { font-size: 1.5rem !important; font-weight: 800; color: #1E1E1E; flex-grow: 1; }
     .score-text { font-size: 1.1rem !important; font-weight: 600; color: #999; min-width: 120px; text-align: right; }
     .path-row { font-size: 1.05rem !important; color: #888; margin-top: 4px; margin-left: 75px; }
+    .ai-keyword-box { background-color: #f9f9f9; padding: 12px; border-radius: 8px; margin-bottom: 20px; border-left: 5px solid #007bff; }
     hr { border: 0; border-top: 1px solid #eee; margin: 15px 0; }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("🚀 지능형 카테고리 분석기")
 
-# --- [3] 데이터 바구니 (형님 데이터) ---
+# --- [3] 데이터 바구니 (1,836개 데이터) ---
 CATEGORY_DATA = {
 "K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
@@ -1892,18 +1886,15 @@ query = st.text_input("분석할 품명/규격을 입력하세요", placeholder=
 
 if query:
     if gemini_model is None:
-        st.error(f"❌ 구글 AI 연결 실패!")
-        st.warning(f"시스템 진단 메시지: {error_msg}")
-        st.info("팁: API 키를 만든 지 5분이 안 되었다면 조금만 더 기다려보세요.")
+        st.error(f"❌ 연결 실패! (진단: {error_msg})")
     else:
-        with st.spinner('제미나이가 카테고리 분석 중...'):
+        with st.spinner('제미나이가 v1 통로로 정밀 분석 중...'):
             try:
-                # 데이터가 너무 많으면 구글이 거부하므로 800개로 줄여서 시도
                 list_text = "\n".join([f"{c}: {p}" for c, p in list(CATEGORY_DATA.items())[:800]])
+                prompt = f"품명: {query}\n아래 리스트에서 가장 적절한 카테고리 3개를 '코드 | 전체경로 | 이유' 형식으로 골라줘.\n\n[리스트]\n{list_text}"
                 
-                prompt = f"입력품명: {query}\n아래 리스트에서 가장 적절한 카테고리 3개를 '코드 | 전체경로 | 이유' 형식으로 골라줘.\n\n[리스트]\n{list_text}"
-                
-                response = gemini_model.generate_content(prompt)
+                # 호출 시에도 정식 통로(api_options)를 사용합니다.
+                response = gemini_model.generate_content(prompt, request_options=api_options)
                 
                 st.write("---")
                 for i, line in enumerate(response.text.strip().split('\n')):
@@ -1915,7 +1906,7 @@ if query:
                                 <div class="rank-text">{i+1}순위</div>
                                 <div class="code-text">{code}</div>
                                 <div class="main-name">{path.split(' > ')[-1]}</div>
-                                <div class="score-text">[정밀 매칭]</div>
+                                <div class="score-text">[v1 정밀매칭]</div>
                             </div>
                             <div class="path-row">📍 {path}</div>
                         ''', unsafe_allow_html=True); st.write("---")
