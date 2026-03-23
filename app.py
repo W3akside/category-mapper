@@ -2,44 +2,15 @@ import streamlit as st
 import google.generativeai as genai
 
 # --- [1] API 설정 ---
-# 형님, 여기서 'API 키 만들기'로 새로 만든 생생한 키를 넣어주세요!
-API_KEY = "AIzaSyBNXY2bOC7Y5Z1k76wsdZpJu6l0nf1WqCc"
+# 형님, 여기 따옴표 안에 아까 그 새 키만 정확히 복사해 넣으세요!
+API_KEY = "AIzaSyBNXY2bOC7Y5Z1k76wsdZpJu6l0nf1WqCc" 
 genai.configure(api_key=API_KEY)
 
-@st.cache_resource
-def load_ai_model():
-    # 가장 표준적인 이름 딱 2개만 씁니다. (1.5 Flash가 주력입니다)
-    for name in ['gemini-1.5-flash', 'gemini-pro']:
-        try:
-            model = genai.GenerativeModel(name)
-            # 연결 테스트 (이게 안 되면 다음 이름으로)
-            model.generate_content("hi", generation_config={"max_output_tokens": 1})
-            return model
-        except:
-            continue
-    return None
-
-gemini_model = load_ai_model()
-
-# --- [2] 디자인 (형님의 황금 배치) ---
-st.set_page_config(layout="centered", page_title="지능형 카테고리 분석기")
-st.markdown("""
-    <style>
-    .main .block-container { max-width: 850px !important; padding-top: 2rem; }
-    .row-container { display: flex; align-items: center; justify-content: flex-start; gap: 15px; width: 100%; }
-    .rank-text { font-size: 1.2rem !important; font-weight: 700; min-width: 60px; color: #555; }
-    .code-text { background-color: #f0f4ff; color: #007bff; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-size: 0.95rem; min-width: 90px; text-align: center; }
-    .main-name { font-size: 1.5rem !important; font-weight: 800; color: #1E1E1E; flex-grow: 1; }
-    .score-text { font-size: 1.1rem !important; font-weight: 600; color: #999; min-width: 120px; text-align: right; }
-    .path-row { font-size: 1.05rem !important; color: #888; margin-top: 4px; margin-left: 75px; }
-    hr { border: 0; border-top: 1px solid #eee; margin: 15px 0; }
-    </style>
-    """, unsafe_allow_html=True)
-
+# --- [2] 디자인 ---
+st.set_page_config(layout="centered", page_title="자재 분석기")
 st.title("🚀 지능형 카테고리 분석기")
 
-# --- [3] 데이터 (1,836개 리스트) ---
-# 형님, 여기에 엑셀 데이터 싹 붙여넣으시는 거 잊지 마세요!
+# --- [3] 데이터 (1,836개 데이터 입력란) ---
 CATEGORY_DATA = {
 "K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
@@ -1879,35 +1850,29 @@ CATEGORY_DATA = {
 "K17100204" : "특수분야 > 용역/비용 > 비용 > 화물택배비",
 }
 
-query = st.text_input("분석할 품명/규격을 입력하세요", placeholder="예: 안전화 k2")
+query = st.text_input("분석할 품명/규격을 입력하세요 (예: 안전화 k2)")
 
 if query:
-    if gemini_model is None:
-        st.error("❌ 구글 AI 서버에 접속할 수 없습니다. API 키를 새로 발급받아 교체해보세요.")
-    else:
-        with st.spinner('제미나이가 카테고리 분석 중...'):
-            try:
-                # 너무 길면 서버가 거절하니까 800개 정도로 제한해서 보냅니다.
-                items = list(CATEGORY_DATA.items())[:800]
-                list_text = "\n".join([f"{c}: {p}" for c, p in items])
-                
-                prompt = f"'{query}'와 가장 잘 어울리는 카테고리 3개를 리스트에서 골라줘. '코드 | 전체경로 | 이유' 형식으로 딱 3개만."
-                
-                response = gemini_model.generate_content(prompt)
-                
-                st.write("---")
-                for i, line in enumerate(response.text.strip().split('\n')):
-                    if '|' in line and i < 3:
-                        parts = line.split('|')
-                        code, path = parts[0].strip(), parts[1].strip()
-                        st.markdown(f'''
-                            <div class="row-container">
-                                <div class="rank-text">{i+1}순위</div>
-                                <div class="code-text">{code}</div>
-                                <div class="main-name">{path.split(' > ')[-1]}</div>
-                                <div class="score-text">[AI 분석완료]</div>
-                            </div>
-                            <div class="path-row">📍 {path}</div>
-                        ''', unsafe_allow_html=True); st.write("---")
-            except Exception as e:
-                st.error(f"⚠️ 일시적 오류입니다. 다시 검색해보세요.")
+    with st.spinner('제미나이가 분석 중...'):
+        try:
+            # 1.5 Flash 모델 호출 (가장 확실한 명칭)
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            
+            # 데이터가 너무 많으면 구글이 거절하니까 500개만 먼저 테스트
+            items = list(CATEGORY_DATA.items())[:500]
+            list_text = "\n".join([f"{c}: {p}" for c, p in items])
+            
+            prompt = f"'{query}'와 가장 유사한 카테고리 3개를 리스트에서 골라줘. '코드 | 전체경로 | 이유' 형식으로 답변해.\n\n[리스트]\n{list_text}"
+            
+            # 실제 호출
+            response = model.generate_content(prompt)
+            
+            # 결과 출력
+            st.success("분석이 완료되었습니다!")
+            st.markdown("### 🔍 분석 결과")
+            st.write(response.text)
+            
+        except Exception as e:
+            # 여기서 나오는 영어 메시지가 진짜 범인입니다.
+            st.error(f"구글 서버 연결 에러: {e}")
+            st.warning("팁: 키를 새로 만든 지 10분이 안 지났다면 조금만 더 기다려 보세요.")
