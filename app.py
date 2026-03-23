@@ -3,32 +3,32 @@ from sentence_transformers import SentenceTransformer, util
 import google.generativeai as genai
 import torch
 
-# --- [1] 설정: API 키 ---
-# 형님의 API 키를 아래 따옴표 안에 넣어주세요.
-genai.configure(api_key="AIzaSyDnRcEZx5aL1BvgHF-3i982HS01jXNUSm8") 
+# --- [1] API 설정 (형님의 새 키를 넣어주세요) ---
+API_KEY = "AIzaSyDnRcEZx5aL1BvgHF-3i982HS01jXNUSm8"
+genai.configure(api_key=API_KEY)
 
-# [에러 방지] 여러 경로로 모델 호출 시도
-def get_gemini_model():
-    model_names = ["gemini-1.5-flash", "models/gemini-1.5-flash", "gemini-pro"]
-    for name in model_names:
+@st.cache_resource
+def load_ai_model():
+    # 무료 등급(Free Tier)은 반드시 'models/' 경로를 명시해야 에러가 안 납니다.
+    for name in ["models/gemini-1.5-flash", "models/gemini-pro"]:
         try:
             model = genai.GenerativeModel(name)
-            # 모델이 정상 작동하는지 가볍게 테스트
-            model.generate_content("test", generation_config={"max_output_tokens": 1})
+            # 작동 테스트
+            model.generate_content("hi", generation_config={"max_output_tokens": 1})
             return model
         except:
             continue
     return None
 
-gemini_model = get_gemini_model()
+gemini_model = load_ai_model()
 
 @st.cache_resource
-def load_local_model():
+def load_embedding_model():
     return SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
 
-local_model = load_local_model()
+local_model = load_embedding_model()
 
-# --- [2] 디자인 (가로형 황금 배치) ---
+# --- [2] 디자인 CSS (생략 없이 전체 포함) ---
 st.set_page_config(layout="centered", page_title="지능형 카테고리 분석기")
 st.markdown("""
     <style>
@@ -39,14 +39,13 @@ st.markdown("""
     .main-name { font-size: 1.5rem !important; font-weight: 800; color: #1E1E1E; flex-grow: 1; }
     .score-text { font-size: 1.1rem !important; font-weight: 600; color: #999; min-width: 120px; text-align: right; }
     .path-row { font-size: 1.05rem !important; color: #888; margin-top: 4px; margin-left: 75px; }
-    .ai-keyword-box { background-color: #f9f9f9; padding: 12px; border-radius: 8px; margin-bottom: 20px; border-left: 5px solid #007bff; font-size: 1rem; }
-    hr { border: 0; border-top: 1px solid #eee; margin: 15px 0; }
+    .ai-keyword-box { background-color: #f9f9f9; padding: 12px; border-radius: 8px; margin-bottom: 20px; border-left: 5px solid #007bff; }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("🚀 지능형 카테고리 분석기")
 
-# --- [3] 데이터 바구니 (형님의 1,836개 데이터를 여기에 넣으세요) ---
+# --- [3] 데이터 (형님 데이터 1,836개 입력) ---
 CATEGORY_DATA = {
 "K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
@@ -1886,67 +1885,56 @@ CATEGORY_DATA = {
 "K17100204" : "특수분야 > 용역/비용 > 비용 > 화물택배비",
 }
 
-query = st.text_input("분석할 품명/규격을 입력하세요", placeholder="예: (주)세중 전기강판")
+query = st.text_input("분석할 품명/규격을 입력하세요")
 
 if query:
     if gemini_model is None:
-        st.error("AI 엔진을 불러오지 못했습니다. API 키나 인터넷 연결을 확인해주세요.")
+        st.error("❌ 무료 API 키 인증 경로 오류입니다. (모델 경로 확인 필요)")
     else:
-        with st.spinner('정밀 분석 중...'):
-            # 1. 제미나이 정예 키워드 5개 추출
-            prompt = f"'{query}' 품명을 보고, 관련 세부 카테고리 명칭 5개를 쉼표로만 나열해줘."
+        with st.spinner('제미나이 분석 중...'):
             try:
-                res = gemini_model.generate_content(prompt)
-                ai_keywords = [k.strip() for k in res.text.split(',') if len(k.strip()) >= 2][:5]
+                # 무료 등급에 최적화된 호출
+                response = gemini_model.generate_content(f"'{query}'와 연관된 한국어 산업용 카테고리 단어 5개를 쉼표로 나열해줘.")
+                ai_keywords = [k.strip() for k in response.text.split(',') if len(k.strip()) >= 2][:5]
                 
                 if ai_keywords:
-                    st.markdown(f"""<div class="ai-keyword-box"><b>🔍 제미나이 선정 핵심 키워드:</b> {' | '.join(ai_keywords)}</div>""", unsafe_allow_html=True)
+                    st.markdown(f"""<div class="ai-keyword-box"><b>🔍 제미나이 추천 키워드:</b> {' | '.join(ai_keywords)}</div>""", unsafe_allow_html=True)
                 
-                # 결과 매칭 로직 시작
                 results = []
                 seen_codes = set()
-                
-                def add_result(code, path, label):
-                    if code not in seen_codes and len(results) < 5:
-                        results.append((code, path, label))
-                        seen_codes.add(code)
+                def add_res(c, p, l):
+                    if c not in seen_codes and len(results) < 5:
+                        results.append((c, p, l)); seen_codes.add(c)
 
-                # 6단계 필터링 실행
-                paths = list(CATEGORY_DATA.values())
-                codes = list(CATEGORY_DATA.keys())
-
+                # 6단계 필터링 로직
                 for kw in ai_keywords:
-                    kw_split = [w for w in kw.split() if len(w) >= 2]
+                    split_kw = [w for w in kw.split() if len(w) >= 2]
                     for cd, path in CATEGORY_DATA.items():
-                        detail_cat = path.split(' > ')[-1]
-                        if kw == detail_cat: add_result(cd, path, "100% 일치")
-                        elif kw in detail_cat: add_result(cd, path, "단어 포함")
-                        elif len(kw_split) >= 2 and all(s in detail_cat for s in kw_split): add_result(cd, path, "전체 매칭")
-                        elif len(kw_split) >= 2 and any(s in detail_cat for s in kw_split): add_result(cd, path, "부분 매칭")
+                        detail = path.split(' > ')[-1]
+                        if kw == detail: add_res(cd, path, "100% 일치")
+                        elif kw in detail: add_res(cd, path, "단어 포함")
+                        elif len(split_kw) >= 2 and all(s in detail for s in split_kw): add_res(cd, path, "전체 매칭")
+                        elif len(split_kw) >= 2 and any(s in detail for s in split_kw): add_res(cd, path, "부분 매칭")
 
-                # 보험: 결과 부족 시 AI 유사도 동원
+                # 보험용 유사도
                 if len(results) < 5:
-                    query_emb = local_model.encode(query, convert_to_tensor=True)
-                    desc_emb = local_model.encode(paths, convert_to_tensor=True)
-                    scores = util.pytorch_cos_sim(query_emb, desc_emb)[0]
-                    top_val, top_idx = torch.topk(scores, k=min(10, len(paths)))
-                    for idx in top_idx:
-                        add_result(codes[idx], paths[idx], "AI 유사도")
+                    all_paths = list(CATEGORY_DATA.values())
+                    all_codes = list(CATEGORY_DATA.keys())
+                    q_emb = local_model.encode(query, convert_to_tensor=True)
+                    p_emb = local_model.encode(all_paths, convert_to_tensor=True)
+                    scores = util.pytorch_cos_sim(q_emb, p_emb)[0]
+                    t_val, t_idx = torch.topk(scores, k=min(10, len(all_paths)))
+                    for idx in t_idx: add_res(all_codes[idx], all_paths[idx], "AI 유사도")
 
-                # 최종 출력
-                st.write("---")
                 for i, (cd, path, label) in enumerate(results):
-                    name_only = path.split(' > ')[-1]
                     st.markdown(f'''
                         <div class="row-container">
                             <div class="rank-text">{i+1}순위</div>
                             <div class="code-text">{cd}</div>
-                            <div class="main-name">{name_only}</div>
+                            <div class="main-name">{path.split(' > ')[-1]}</div>
                             <div class="score-text">[{label}]</div>
                         </div>
                         <div class="path-row">📍 {path}</div>
-                    ''', unsafe_allow_html=True)
-                    st.write("---")
-
+                    ''', unsafe_allow_html=True); st.write("---")
             except Exception as e:
-                st.error(f"분석 중 오류가 발생했습니다: {e}")
+                st.error(f"⚠️ 연결 오류: {e}")
