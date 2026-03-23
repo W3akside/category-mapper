@@ -3,9 +3,15 @@ from sentence_transformers import SentenceTransformer, util
 import google.generativeai as genai
 import torch
 
-# --- [1] 설정 (형님의 API 키를 꼭 확인하세요) ---
+# --- [1] 설정: API 키 ---
+# 형님의 API 키를 아래 따옴표 안에 넣어주세요.
 genai.configure(api_key="AIzaSyCVlOoyvOqbmh3FvxiTSCWBFwBTQT1ubmg") 
-gemini_model = genai.GenerativeModel('models/gemini-1.5-flash')
+
+# 모델 호출 에러 방지를 위해 명확한 경로 사용
+try:
+    gemini_model = genai.GenerativeModel('models/gemini-1.5-flash')
+except:
+    gemini_model = genai.GenerativeModel('models/gemini-pro')
 
 @st.cache_resource
 def load_local_model():
@@ -13,7 +19,7 @@ def load_local_model():
 
 local_model = load_local_model()
 
-# --- [2] 디자인 (형님의 황금 배치 박제) ---
+# --- [2] 디자인 (가로형 황금 배치) ---
 st.set_page_config(layout="centered", page_title="지능형 카테고리 분석기")
 st.markdown("""
     <style>
@@ -31,8 +37,8 @@ st.markdown("""
 
 st.title("🚀 지능형 카테고리 분석기")
 
-# --- [3] 데이터 (형님의 1,836개 데이터가 들어갈 자리) ---
-# 예시 데이터입니다. 실제 데이터로 채워주세요.
+# --- [3] 데이터 바구니 (여기에 형님의 1,836개 데이터를 넣으세요) ---
+# 예시: "코드": "대분류 > 중분류 > 소분류 > 세부카테고리"
 CATEGORY_DATA = {
 "K01010101" : "연료/화학 > 고무/수지 > 고무/수지 > 고무",
 "K01010102" : "연료/화학 > 고무/수지 > 고무/수지 > 고무/수지봉",
@@ -1869,22 +1875,25 @@ CATEGORY_DATA = {
 "K17100201" : "특수분야 > 용역/비용 > 비용 > 물류비",
 "K17100202" : "특수분야 > 용역/비용 > 비용 > 입찰수수료",
 "K17100203" : "특수분야 > 용역/비용 > 비용 > 통관료",
-"K17100204" : "특수분야 > 용역/비용 > 비용 > 화물택배비",
+"K17100204" : "특수분야 > 용역/비용 > 비용 > 화물택배비", 
 }
 
-query = st.text_input("분석할 품명/규격을 입력하세요")
+# --- [4] 로직 시작 ---
+query = st.text_input("분석할 품명/규격을 입력하세요", placeholder="예: (주)세중 전기강판 30PH105*100")
 
 if query:
-    with st.spinner('정밀 분석 중...'):
+    with st.spinner('제미나이가 카테고리를 추론 중...'):
         # 1. 제미나이가 정예 키워드 5개 선정
-        prompt = f"'{query}' 품명을 보고, 우리 카테고리 리스트에 있을 법한 연관 세부 카테고리 명칭 5개를 쉼표로만 나열해줘. (예: 전기강판, 커플링, 베어링 등)"
+        prompt = f"'{query}' 품명을 보고, 우리 카테고리 리스트에 있을 법한 연관 세부 카테고리 명칭 5개를 쉼표로만 나열해줘. (예: 전기강판, 작업화, 볼베어링 등)"
+        
         try:
             res = gemini_model.generate_content(prompt)
             # 2글자 이상인 단어만 키워드로 인정
             ai_keywords = [k.strip() for k in res.text.split(',') if len(k.strip()) >= 2][:5]
             
-            # [수정] 검색창 바로 하단에 나열
-            st.markdown(f"""<div class="ai-keyword-box"><b>🔍 제미나이 선정 핵심 키워드:</b> {' | '.join(ai_keywords)}</div>""", unsafe_allow_html=True)
+            # 검색창 바로 하단에 나열
+            if ai_keywords:
+                st.markdown(f"""<div class="ai-keyword-box"><b>🔍 제미나이 선정 핵심 키워드:</b> {' | '.join(ai_keywords)}</div>""", unsafe_allow_html=True)
         except Exception as e:
             st.error(f"AI 키워드 추출 실패: {e}")
             ai_keywords = []
@@ -1892,28 +1901,37 @@ if query:
         results = []
         seen_codes = set()
 
+        # 결과 리스트에 추가하는 함수
         def add_result(code, path, label):
             if code not in seen_codes and len(results) < 5:
                 results.append((code, path, label))
                 seen_codes.add(code)
 
-        # 2~6. 6단계 필터링 로직 실행
+        # 2~6. 형님의 6단계 필터링 로직 실행
         codes = list(CATEGORY_DATA.keys())
         paths = list(CATEGORY_DATA.values())
 
+        # 제미나이가 뽑은 키워드를 하나씩 검사
         for kw in ai_keywords:
             if len(results) >= 5: break
+            
+            # 2글자 이상 단어로 쪼개기 (예: '안전 작업화' -> ['안전', '작업화'])
             kw_split = [w for w in kw.split() if len(w) >= 2]
             
             for cd, path in CATEGORY_DATA.items():
-                detail_cat = path.split(' > ')[-1] # 세부 카테고리 명칭
+                detail_cat = path.split(' > ')[-1] # 마지막 세부 카테고리 명칭만 추출
                 
-                if kw == detail_cat: add_result(cd, path, "100% 일치")
-                elif kw in detail_cat: add_result(cd, path, "단어 포함")
-                elif len(kw_split) >= 2 and all(s in detail_cat for s in kw_split): add_result(cd, path, "전체 매칭")
-                elif len(kw_split) >= 2 and any(s in detail_cat for s in kw_split): add_result(cd, path, "부분 매칭")
+                # 순서대로 매칭 (일치하면 바로 추가하고 다음 카테고리로)
+                if kw == detail_cat: 
+                    add_result(cd, path, "100% 일치")
+                elif kw in detail_cat: 
+                    add_result(cd, path, "단어 포함")
+                elif len(kw_split) >= 2 and all(s in detail_cat for s in kw_split): 
+                    add_result(cd, path, "전체 매칭")
+                elif len(kw_split) >= 2 and any(s in detail_cat for s in kw_split): 
+                    add_result(cd, path, "부분 매칭")
 
-        # 보험: 결과가 5개 미만이면 AI 유사도로 채움
+        # [보험] 결과가 5개 미만이면 AI 유사도로 채우기
         if len(results) < 5:
             query_emb = local_model.encode(query, convert_to_tensor=True)
             desc_emb = local_model.encode(paths, convert_to_tensor=True)
@@ -1922,17 +1940,20 @@ if query:
             for idx in top_idx:
                 add_result(codes[idx], paths[idx], "AI 유사도")
 
-        # 최종 출력
+        # --- [5] 최종 결과 출력 ---
         st.write("---")
-        for i, (cd, path, label) in enumerate(results):
-            name_only = path.split(' > ')[-1]
-            st.markdown(f'''
-                <div class="row-container">
-                    <div class="rank-text">{i+1}순위</div>
-                    <div class="code-text">{cd}</div>
-                    <div class="main-name">{name_only}</div>
-                    <div class="score-text">[{label}]</div>
-                </div>
-                <div class="path-row">📍 {path}</div>
-            ''', unsafe_allow_html=True)
-            st.write("---")
+        if not results:
+            st.warning("일치하는 카테고리를 찾지 못했습니다.")
+        else:
+            for i, (cd, path, label) in enumerate(results):
+                name_only = path.split(' > ')[-1]
+                st.markdown(f'''
+                    <div class="row-container">
+                        <div class="rank-text">{i+1}순위</div>
+                        <div class="code-text">{cd}</div>
+                        <div class="main-name">{name_only}</div>
+                        <div class="score-text">[{label}]</div>
+                    </div>
+                    <div class="path-row">📍 {path}</div>
+                ''', unsafe_allow_html=True)
+                st.write("---")
